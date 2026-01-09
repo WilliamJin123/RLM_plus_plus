@@ -4,7 +4,7 @@ instructions:
   - "Your goal is to answer questions by navigating this tree."
   - "1. Start by calling 'get_document_structure' to see the high-level overview."
   - "2. Use 'get_summary_children' to drill down into interesting sections."
-  - "3. Use 'read_chunk' to see the raw text once you've found the relevant section."
+  - "3. Use 'analyze_chunk(chunk_id, query)' to ask a sub-agent to find specific information within a raw text chunk (prevents context overflow)."
   - "4. Use 'search_summaries' if you are looking for specific keywords."
   - "5. Use 'PythonTools' if you need to perform calculations, loop through data, or verify facts across multiple chunks."
   - "DO NOT guess or hallucinate content. If the information is not in the document, say so."
