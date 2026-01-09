@@ -1,14 +1,11 @@
 import json
 from typing import Dict, Any
 from agno.agent import Agent
-from agno.models.groq import Groq
-from agno.models.openai import OpenAIChat
-from agno.models.anthropic import Claude
-from src.config import config
+from src.core.get_model import get_model
 
 class SmartIngestor:
     def __init__(self):
-        self.model = self._get_fast_model()
+        self.model = get_model()
         self.agent = Agent(
             model=self.model,
             description="You are an expert text segmenter.",
@@ -23,25 +20,6 @@ class SmartIngestor:
             ],
             markdown=True
         )
-
-    def _get_fast_model(self):
-        # Reusing the factory logic or importing it if we refactored. 
-        # For now, duplicate simple logic to avoid circular imports or complex refactors yet.
-        provider = config.FAST_MODEL_PROVIDER.lower()
-        if provider == "groq":
-            return Groq(id=config.FAST_MODEL_NAME)
-        elif provider == "openai":
-            return OpenAIChat(id=config.FAST_MODEL_NAME)
-        elif provider == "anthropic":
-            return Claude(id=config.FAST_MODEL_NAME)
-        elif provider == "openrouter":
-            return OpenAIChat(
-                id=config.OPENROUTER_MODEL_NAME,
-                base_url="https://openrouter.ai/api/v1",
-                api_key=config.OPENROUTER_API_KEY
-            )
-        else:
-            raise ValueError(f"Unsupported provider: {provider}")
 
     def find_cut_point(self, text: str) -> Dict[str, Any]:
         """

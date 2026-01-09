@@ -16,7 +16,7 @@
     - `instructions` (JSON): List of system prompt strings.
     - `tools` (JSON): List of string tool names (mapped to functions via Registry).
     - `model_settings` (JSON): Provider, model name, temperature, max_tokens.
-    - `storage_settings` (JSON): `add_history_to_messages`, `num_history_responses`, and any other agno configs (research agno docs, search the web if necessary). I want you to amke sure tehse are robust and well-thought out.
+    - `storage_settings` (JSON): `add_history_to_context`, `num_history_runs`, and any other agno configs (research agno docs, search the web if necessary). I want you to amke sure tehse are robust and well-thought out.
 
 - [ ] **Migration Script (`src/utils/migrate_v3.py`)**
   - A one-time script to populate `agent_configs` with the current hardcoded defaults from V2 (e.g., reading `agent_prompt.yaml`).
@@ -40,7 +40,7 @@
        - `tools` (from DB)
        - `model` (from DB)
        - `storage` (SqliteAgentStorage linked to `data/history.db`)
-       - `add_history_to_messages` (from DB)
+       - `add_history_to_context` (from DB)
 
 ---
 
@@ -49,7 +49,7 @@
 
 - [ ] **Session Management**
   - Ensure every agent run is tagged with a `session_id`.
-  - **RLM Agent:** Needs high history retention (`num_history_responses=10`) to remember previous search steps in a complex query.
+  - **RLM Agent:** Needs high history retention (`num_history_runs=10`) to remember previous search steps in a complex query.
   - **Overseer:** Needs access to the *RLM's* storage to read the full conversation history, not just the event bus stream.
 
 - [ ] **Context Retrieval Tools (`src/tools/context_tools.py`)**
@@ -97,5 +97,4 @@
 2.  Refactor `src/tools/registry.py` to map strings to functions.
 3.  Implement `src/core/factory.py`.
 
-Prompt:
-implement @IMPLEMENTATION_PLAN_V3.md (read @PAST_HISTORY.md  for additional context). respect the current implementations related to agno's SqliteDB, setup_tracing, and MultiProviderWrapper stuff. change anyhting else freely.   
+

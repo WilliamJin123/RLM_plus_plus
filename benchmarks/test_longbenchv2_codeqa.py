@@ -1,7 +1,7 @@
 import os
 import time
 from src.core.indexer import Indexer
-from src.core.agent import RLMAgent
+from src.core.factory import AgentFactory
 from src.core.db import init_db
 
 def ingest_codebase(indexer: Indexer, root_dir: str):
@@ -12,21 +12,24 @@ def ingest_codebase(indexer: Indexer, root_dir: str):
             if file.endswith(".py"):
                 file_path = os.path.join(root, file)
                 print(f"Indexing {file_path}...")
-                indexer.ingest_file(file_path)
+                # Use Large Scale settings
+                indexer.ingest_file(file_path, target_chunk_tokens=50000, group_size=2)
 
 def run_test():
     print("--- Starting Indexing ---")
-    indexer = Indexer()
-    # Reset DB for test
-    if os.path.exists("data/rlm.db"):
-        os.remove("data/rlm.db")
-    init_db()
+    db_path = "data/longbenchv2.db"
+    if os.path.exists(db_path):
+        os.remove(db_path)
+    
+    # Initialize Indexer with specific DB path
+    indexer = Indexer(db_path)
     
     # Ingest the src directory of this project
     ingest_codebase(indexer, "src")
     
     print("--- Starting Agent Search ---")
-    agent = RLMAgent()
+    # Use factory to create agent with NO HISTORY
+    agent = AgentFactory.create_agent("rlm-agent", session_id="test_longbenchv2_codeqa", add_history_to_context=False, read_chat_history=False)
     query = "Explain how the 'Summary' table in the database is used to build a hierarchical index. Which file defines this?"
     response = agent.run(query)
     

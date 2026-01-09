@@ -39,7 +39,17 @@ class Summary(Base):
 engine = create_engine(f"sqlite:///{config.DB_PATH}")
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-def init_db():
+def init_db(db_path: str = None):
+    global engine
+    if db_path:
+        # Create new engine and rebind session factory
+        engine = create_engine(f"sqlite:///{db_path}")
+        SessionLocal.configure(bind=engine)
+        print(f"Database initialized at {db_path}")
+    else:
+        # Just use the default engine
+        print(f"Database initialized at {config.DB_PATH}")
+
     Base.metadata.create_all(bind=engine)
 
 if __name__ == "__main__":

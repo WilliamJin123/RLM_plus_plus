@@ -3,7 +3,7 @@ import random
 import uuid
 import time
 from src.core.indexer import Indexer
-from src.core.agent import RLMAgent
+from src.core.factory import AgentFactory
 from src.core.db import init_db
 
 def generate_haystack(file_path: str, size_in_tokens: int = 100000):
@@ -44,21 +44,24 @@ def generate_haystack(file_path: str, size_in_tokens: int = 100000):
 
 def run_test():
     haystack_file = "data/haystack.txt"
-    needle = generate_haystack(haystack_file, size_in_tokens=20000) # Start smaller for testing
+    # Generate 150k tokens to test 50k chunking (should create ~3 chunks)
+    needle = generate_haystack(haystack_file, size_in_tokens=150000) 
     
     print("--- Starting Indexing ---")
     start_time = time.time()
-    indexer = Indexer()
-    # Reset DB for test
-    if os.path.exists("data/rlm.db"):
-        os.remove("data/rlm.db")
-    init_db()
+    db_path = "data/s_niah.db"
+    if os.path.exists(db_path):
+        os.remove(db_path)
     
-    indexer.ingest_file(haystack_file, chunk_size=1000, overlap=200)
+    indexer = Indexer(db_path)
+    
+    # Use Large Scale settings: 50k tokens per chunk, group 2 chunks for summary (100k context)
+    indexer.ingest_file(haystack_file, target_chunk_tokens=50000, group_size=2)
     print(f"Indexing took {time.time() - start_time:.2f}s")
     
     print("--- Starting Agent Search ---")
-    agent = RLMAgent()
+    # Use factory to create agent with NO HISTORY
+    agent = AgentFactory.create_agent("rlm-agent", session_id="test_niah", add_history_to_context=False, read_chat_history=False)
     response = agent.run("Find the 'secret code' mentioned in the document and return it.")
     
     print("\nAgent Response:")
