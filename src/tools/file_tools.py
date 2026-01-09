@@ -1,6 +1,8 @@
 from typing import List, Optional
 from sqlalchemy.orm import Session
 from src.core.db import SessionLocal, Chunk, Summary
+from agno.agent import Agent
+from src.core.get_model import get_model
 
 def get_document_structure(ignore: str = "ignore") -> str:
     """
@@ -55,9 +57,14 @@ def get_summary_children(summary_id: int) -> str:
     session.close()
     return result
 
-def read_chunk(chunk_id: int) -> str:
+def analyze_chunk(chunk_id: int, query: str) -> str:
     """
-    Returns the full text of a specific chunk.
+    Spawns a sub-agent to read the full text of a specific chunk and answer a query.
+    This prevents the main agent's context from being flooded with raw text.
+    
+    Args:
+        chunk_id: The ID of the chunk to analyze.
+        query: The specific question or instruction for the sub-agent regarding this chunk.
     """
     session = SessionLocal()
     chunk = session.query(Chunk).filter(Chunk.id == chunk_id).first()
@@ -67,7 +74,21 @@ def read_chunk(chunk_id: int) -> str:
     
     text = chunk.text
     session.close()
-    return text
+    
+    try:
+        # Spawn a lightweight sub-agent to read the chunk
+        sub_agent = Agent(
+            model=get_model(),
+            description="You are a precise reading assistant.",
+            instructions="Read the provided context and answer the user's question accurately. Do not add external information.",
+            markdown=True
+        )
+        
+        prompt = f"Context:\n{text}\n\nQuestion: {query}"
+        response = sub_agent.run(prompt)
+        return str(response.content)
+    except Exception as e:
+        return f"Error analyzing chunk: {str(e)}"
 
 def search_summaries(query: str) -> str:
     """

@@ -25,7 +25,7 @@ def migrate():
     rlm_tools = [
         "get_document_structure",
         "get_summary_children",
-        "read_chunk",
+        "analyze_chunk",
         "search_summaries",
         "PythonTools"
     ]

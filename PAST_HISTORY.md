@@ -29,3 +29,10 @@ History of Development (V1 & V2)
    * Test Isolation: Updated all benchmarks (`test_longbenchv2_codeqa`, `test_oolong`, `test_s_niah`) to use dedicated, ephemeral database files, preventing cross-test contamination and ensuring reproducibility. Added a new `test_browsecomp_plus` benchmark.
    * Large-Scale Optimization: Reconfigured ingestion parameters for "Production Scale" handling. Set `target_chunk_tokens` to 50,000 and `group_size` to 2. This creates a deeper summary tree optimized for 128k context models, safely handling multi-million token documents without context overflow.
    * Documentation: Added comprehensive docstrings to the `Indexer` to explain the new scaling parameters.
+
+  Refactor 3 (RLM Logic Verification & Sub-Agent Access)
+  Verified and hardened the Recursive Language Model logic to strictly enforce context safety.
+   * **Sub-Agent Context Access:** Replaced the `read_chunk` tool with `analyze_chunk`. Instead of returning raw text (which risks overflowing the main agent's context), this new tool spawns a temporary sub-agent to read the chunk and answer a specific query.
+   * **Tool Registry Update:** Updated `src/tools/registry.py` and `src/tools/file_tools.py` to support the new `analyze_chunk` workflow.
+   * **Prompt Alignment:** Updated `src/prompts/agent_prompt.yaml` to instruct the agent to use the new "peeking" mechanism.
+   * **Configuration Migration:** Ran `src/utils/migrate_v3.py` to update the persistent agent configuration with the new toolset.

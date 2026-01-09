@@ -20,7 +20,7 @@ class ToolRegistry:
         from src.tools.file_tools import (
             get_document_structure, 
             get_summary_children, 
-            read_chunk, 
+            analyze_chunk, 
             search_summaries
         )
         from src.tools.architect_tools import (
@@ -35,7 +35,7 @@ class ToolRegistry:
         tool_map = {
             "get_document_structure": get_document_structure,
             "get_summary_children": get_summary_children,
-            "read_chunk": read_chunk,
+            "analyze_chunk": analyze_chunk,
             "search_summaries": search_summaries,
             "PythonTools": PythonTools(), # Instantiated by default, or we could handle instantiation in factory
             # Architect Tools
