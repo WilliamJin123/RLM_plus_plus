@@ -2,10 +2,13 @@ from typing import List, Optional
 from sqlalchemy.orm import Session
 from src.core.db import SessionLocal, Chunk, Summary
 
-def get_document_structure() -> str:
+def get_document_structure(ignore: str = "ignore") -> str:
     """
     Returns the top-level summaries (the 'root' or level N nodes) 
     to give an overview of the document.
+    
+    Args:
+        ignore: A dummy argument to ensure valid JSON input. Defaults to "ignore".
     """
     session = SessionLocal()
     # Find the highest level

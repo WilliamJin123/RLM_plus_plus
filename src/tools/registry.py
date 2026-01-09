@@ -23,6 +23,13 @@ class ToolRegistry:
             read_chunk, 
             search_summaries
         )
+        from src.tools.architect_tools import (
+            update_instructions,
+            add_tool,
+            remove_tool,
+            update_model_params
+        )
+        from src.tools.context_tools import get_agent_history
         
         # Standard tools
         tool_map = {
@@ -30,7 +37,13 @@ class ToolRegistry:
             "get_summary_children": get_summary_children,
             "read_chunk": read_chunk,
             "search_summaries": search_summaries,
-            "PythonTools": PythonTools() # Instantiated by default, or we could handle instantiation in factory
+            "PythonTools": PythonTools(), # Instantiated by default, or we could handle instantiation in factory
+            # Architect Tools
+            "update_instructions": update_instructions,
+            "add_tool": add_tool,
+            "remove_tool": remove_tool,
+            "update_model_params": update_model_params,
+            "get_agent_history": get_agent_history
         }
         
         # Load dynamic tools

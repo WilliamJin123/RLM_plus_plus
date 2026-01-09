@@ -4,16 +4,17 @@ from agno.agent import Agent
 from agno.db.sqlite import SqliteDb
 from agno.tracing import setup_tracing
 
-from src.core import get_model
+from src.core.get_model import get_model
 from src.core.db import SessionLocal, Chunk, Summary, init_db
-from src.utils.ingest import sliding_window_chunker
+from src.core.smart_ingest import SmartIngestor
 
 class Indexer:
-    def __init__(self):
-        init_db()
+    def __init__(self, db_path: str = None):
+        init_db(db_path)
         self.model = get_model()
-        db_path = Path(__file__).resolve().parent.parent / "data" / "sumarization_agent.db"
-        db_path.parent.mkdir(parents=True, exist_ok=True)
+        # Summarization agent's own DB (different from RLM content DB)
+        agent_db_path = Path(__file__).resolve().parent.parent / "data" / "sumarization_agent.db"
+        agent_db_path.parent.mkdir(parents=True, exist_ok=True)
         self.agent = Agent(
             id="summarization-agent",
             name="Summarization Agent",
@@ -21,7 +22,7 @@ class Indexer:
             description="You are an expert summarizer.",
             instructions="Summarize texts concisely, capturing key facts and entities. They must encapsulate the main points clearly, and give enough context for a person to realize when they should read the full text.",
             db=SqliteDb(
-                db_file=db_path.as_posix(),
+                db_file=agent_db_path.as_posix(),
                 session_table="summarization_agent_sessions",
             )
         )
@@ -30,11 +31,19 @@ class Indexer:
     def summarize_text(self, text: str) -> str:
         prompt = f"Summarize:\n\n{text}"
         response = self.agent.run(prompt)
-        return response.content
+        return str(response.content)
 
-    def ingest_file(self, file_path: str, target_chunk_tokens=1000, group_size=5):
-        from src.core.smart_ingest import SmartIngestor
+    def ingest_file(self, file_path: str, target_chunk_tokens: int = 1000, group_size: int = 2) -> None:
+        """
+        Ingests a file into the database using smart chunking and recursive summarization.
         
+        Args:
+            file_path: Path to the file to be indexed.
+            target_chunk_tokens: The approximate number of tokens desired per chunk. 
+                               The SmartIngestor will find the best semantic cut point near this target.
+            group_size: How many chunks (or lower-level summaries) to group together when 
+                        creating the next level of the summary hierarchy. Defaults to 2 (i.e., binary tree).
+        """
         path = Path(file_path)
         with path.open('r', encoding='utf-8') as f:
             full_text = f.read()

@@ -2,7 +2,7 @@ import os
 import random
 import time
 from src.core.indexer import Indexer
-from src.core.agent import RLMAgent
+from src.core.factory import AgentFactory
 from src.core.db import init_db
 
 def generate_oolong_data(file_path: str, num_entries: int = 100):
@@ -39,16 +39,18 @@ def run_test():
     generate_oolong_data(data_file, num_entries=50)
     
     print("---" + " Starting Indexing" + " ---")
-    indexer = Indexer()
-    # Reset DB for test
-    if os.path.exists("data/rlm.db"):
-        os.remove("data/rlm.db")
-    init_db()
+    db_path = "data/oolong.db"
+    if os.path.exists(db_path):
+        os.remove(db_path)
     
-    indexer.ingest_file(data_file, chunk_size=500, overlap=100)
+    indexer = Indexer(db_path)
+    
+    # Use Large Scale settings
+    indexer.ingest_file(data_file, target_chunk_tokens=50000, group_size=2)
     
     print("---" + " Starting Agent Search" + " ---")
-    agent = RLMAgent()
+    # Use factory to create agent with NO HISTORY
+    agent = AgentFactory.create_agent("rlm-agent", session_id="test_oolong", add_history_to_context=False, read_chat_history=False)
     query = "Find all pairs of people who were in Paris at the same time. Check the dates carefully."
     response = agent.run(query)
     
