@@ -2,7 +2,7 @@ from typing import List, Optional
 from sqlalchemy.orm import Session
 from src.core.db import SessionLocal, Chunk, Summary
 from agno.agent import Agent
-from src.core.get_model import get_model
+from src.core.factory import AgentFactory
 
 def get_document_structure(ignore: str = "ignore") -> str:
     """
@@ -78,7 +78,7 @@ def analyze_chunk(chunk_id: int, query: str) -> str:
     try:
         # Spawn a lightweight sub-agent to read the chunk
         sub_agent = Agent(
-            model=get_model(),
+            model=AgentFactory.create_model(),
             description="You are a precise reading assistant.",
             instructions="Read the provided context and answer the user's question accurately. Do not add external information.",
             markdown=True

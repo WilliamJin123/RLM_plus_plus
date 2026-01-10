@@ -4,14 +4,14 @@ from agno.agent import Agent
 from agno.db.sqlite import SqliteDb
 from agno.tracing import setup_tracing
 
-from src.core.get_model import get_model
+from src.core.factory import AgentFactory
 from src.core.db import SessionLocal, Chunk, Summary, init_db
 from src.core.smart_ingest import SmartIngestor
 
 class Indexer:
     def __init__(self, db_path: str = None):
         init_db(db_path)
-        self.model = get_model()
+        self.model = AgentFactory.create_model()
         # Summarization agent's own DB (different from RLM content DB)
         agent_db_path = Path(__file__).resolve().parent.parent / "data" / "sumarization_agent.db"
         agent_db_path.parent.mkdir(parents=True, exist_ok=True)

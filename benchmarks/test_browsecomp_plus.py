@@ -61,7 +61,7 @@ def run_test():
     
     indexer = Indexer(db_path)
     # Use Large Scale settings (mocking a large file scenario)
-    indexer.ingest_file(data_file, target_chunk_tokens=50000, group_size=2)
+    indexer.ingest_file(data_file, target_chunk_tokens=25000, group_size=2)
     
     print("--- Starting Agent Search ---")
     agent = AgentFactory.create_agent("rlm-agent", session_id="test_browsecomp", add_history_to_context=False, read_chat_history=False)

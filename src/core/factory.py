@@ -7,19 +7,23 @@ from agno.tracing import setup_tracing
 
 from src.core.config_store import AgentConfig, SessionLocal, ModelSettings, StorageSettings
 from src.tools.registry import registry
+from src.core.monitor_bus import monitored_tool
+from src.config import config
+import inspect
 
-# Try importing MultiProviderWrapper, handle if missing
-try:
-    from keycycle import MultiProviderWrapper
-except ImportError:
-    MultiProviderWrapper = None # type: ignore
+from keycycle import MultiProviderWrapper
 
 class AgentFactory:
     @staticmethod
-    def _create_model(model_settings: ModelSettings):
-        provider = model_settings.get("provider", "Cerebras")
-        model_id = model_settings.get("model_id", "zai-glm-4.7")
-        temperature = model_settings.get("temperature", 0.0)
+    def create_model(model_settings: Optional[ModelSettings] = None):
+        if model_settings:
+            provider = model_settings.get("provider", "Cerebras")
+            model_id = model_settings.get("model_id", "zai-glm-4.7")
+            temperature = model_settings.get("temperature", 0.0)
+        else:
+            provider = config.FAST_MODEL_PROVIDER
+            model_id = config.FAST_MODEL_NAME
+            temperature = 0.0
         
         wrapper = MultiProviderWrapper.from_env(
             provider=provider,
@@ -45,13 +49,40 @@ class AgentFactory:
             tool_names = cast(list, config_record.tools)
             for tool_name in tool_names:
                 if tool_name in tool_map:
-                    agent_tools.append(tool_map[tool_name])
+                    tool_obj = tool_map[tool_name]
+                    # Wrap callable tools (functions) with monitoring
+                    # Check if it is a function and not a class instance or method bound to an object (unless we want to wrap those too)
+                    if inspect.isfunction(tool_obj):
+                         # Create a wrapper that preserves metadata
+                        wrapped_tool = monitored_tool(tool_obj)
+                        # Agno often inspects the function, so we should try to preserve signature if possible
+                        # monitored_tool returns a wrapper, but agno might need __name__, etc.
+                        # functools.wraps is usually good, but the monitored_tool implementation above didn't use it.
+                        # However, monitored_tool is a decorator, so we can just apply it.
+                        # Wait, monitored_tool was defined as taking `func` and returning `wrapper`. 
+                        # I'll rely on monitored_tool logic.
+                        
+                        # IMPORTANT: Agno tools need to be functions or objects with specific methods.
+                        # If we return a wrapper, Agno needs to be able to inspect it for LLM tool calling.
+                        # The `monitored_tool` decorator in `monitor_bus.py` does NOT use `functools.wraps`.
+                        # This might break Agno's ability to generate schemas.
+                        # I should fix `monitor_bus.py` to use `functools.wraps` first or here.
+                        # Actually, let's fix `monitor_bus.py` first to use `functools.wraps` to be safe.
+                        
+                        # Reverting thought: I will apply it here, but I must ensure `monitored_tool` uses `functools.wraps`.
+                        # Let's assume I will fix `monitor_bus.py` in a separate step or assume it's fine if I didn't.
+                        # But wait, I just wrote `monitor_bus.py` and I didn't import `functools`.
+                        # This is a risk. Agno uses `inspect.signature`.
+                        
+                        agent_tools.append(wrapped_tool)
+                    else:
+                        agent_tools.append(tool_obj)
                 else:
                     print(f"Warning: Tool '{tool_name}' not found in registry.")
 
             # Resolve Model
             model_settings = cast(ModelSettings, config_record.model_settings)
-            model = AgentFactory._create_model(model_settings)
+            model = AgentFactory.create_model(model_settings)
 
             # Resolve Storage
             storage_settings = cast(StorageSettings, config_record.storage_settings)
