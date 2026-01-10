@@ -21,9 +21,11 @@ Instead, all significant context retrieval and analysis must be delegated to spe
 When a feature requires reading data (files, database records, logs):
 
 1.  **Do NOT** return the raw string content to the main agent.
-2.  **Spawn a temporary Sub-Agent** (e.g., using `agno.agent.Agent`).
+2.  **Spawn a temporary Sub-Agent** 
 3.  **Feed the Context** to this sub-agent along with a specific **Query** or **Instruction**.
 4.  **Return the Sub-Agent's Response** to the main agent.
+
+Philosophy: We need to make sure that any agents that do decision making have their tool calls to write code, or change something offloaded to a different context window (using a subagent) and any read operation (read another agent's context, read the entire loop of the program as an Overseer, etc.) is filtered and organized / compressed by subagents as well.    
 
 ### Existing Examples
 

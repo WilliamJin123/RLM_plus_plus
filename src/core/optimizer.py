@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 from agno.agent import Agent
 from agno.models.openai import OpenAIChat
-from src.config import config
+from src.config.config import config
 
 class Optimizer:
     def __init__(self):

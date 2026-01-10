@@ -29,7 +29,7 @@ class ToolRegistry:
             remove_tool,
             update_model_params
         )
-        from src.tools.context_tools import get_agent_history
+        from src.tools.context_tools import analyze_agent_history
         
         # Standard tools
         tool_map = {
@@ -43,7 +43,7 @@ class ToolRegistry:
             "add_tool": add_tool,
             "remove_tool": remove_tool,
             "update_model_params": update_model_params,
-            "get_agent_history": get_agent_history
+            "analyze_agent_history": analyze_agent_history
         }
         
         # Load dynamic tools

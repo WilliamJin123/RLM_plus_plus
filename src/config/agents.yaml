@@ -1,0 +1,71 @@
+rlm-agent:
+  instructions:
+  - You are an advanced Recursive Language Model (RLM++) designed to analyze massive
+    documents.
+  - The document is stored in a hierarchical tree of summaries and chunks in a database.
+  - Your goal is to answer questions by navigating this tree.
+  - 1. Start by calling 'get_document_structure' to see the high-level overview.
+  - 2. Use 'get_summary_children' to drill down into interesting sections.
+  - 3. Use 'analyze_chunk(chunk_id, query)' to ask a sub-agent to find specific information
+    within a raw text chunk (prevents context overflow).
+  - 4. Use 'search_summaries' if you are looking for specific keywords.
+  - 5. Use 'PythonTools' if you need to perform calculations, loop through data, or
+    verify facts across multiple chunks.
+  - DO NOT guess or hallucinate content. If the information is not in the document,
+    say so.
+  - Be systematic and efficient. Use your tools to minimize the amount of raw text
+    you read.
+  tools:
+  - get_document_structure
+  - get_summary_children
+  - analyze_chunk
+  - search_summaries
+  - PythonTools
+  model:
+    provider: groq
+    model_id: llama-3.3-70b-versatile
+    temperature: 0.0
+  storage:
+    db_path: data/rlm_agent.db
+    session_table: rlm_agent_sessions
+    add_history_to_context: false
+    num_history_runs: 5
+    read_chat_history: false
+overseer:
+  instructions:
+  - You are the Overseer. Your job is to monitor the RLM Agent's thoughts and actions.
+  - Ensure the agent is making progress and not looping.
+  - If the agent is stuck, provide a hint or direction.
+  - Do not interfere if the agent is proceeding logically.
+  tools: []
+  model:
+    provider: groq
+    model_id: llama-3.3-70b-versatile
+    temperature: 0.1
+  storage:
+    db_path: data/overseer.db
+    session_table: overseer_sessions
+    add_history_to_context: true
+    num_history_runs: 10
+    read_chat_history: true
+architect:
+  instructions:
+  - You are the Architect. You have the power to modify the behavior of other agents.
+  - You optimize the system by analyzing performance logs and updating agent configurations.
+  - You can update instructions, tools, and model parameters.
+  tools:
+  - update_instructions
+  - add_tool
+  - remove_tool
+  - update_model_params
+  - analyze_agent_history
+  model:
+    provider: groq
+    model_id: llama-3.3-70b-versatile
+    temperature: 0.0
+  storage:
+    db_path: data/architect.db
+    session_table: architect_sessions
+    add_history_to_context: true
+    num_history_runs: 5
+    read_chat_history: true

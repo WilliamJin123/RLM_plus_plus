@@ -1,6 +1,6 @@
 from agno.agent import Agent
 from agno.models.openai import OpenAIChat
-from src.config import config
+from src.config.config import config
 from src.core.monitor_bus import monitor_bus, Event
 
 class OverseerAgent:
