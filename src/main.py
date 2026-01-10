@@ -3,27 +3,6 @@ import sys
 from src.core.indexer import Indexer
 from src.core.monitor_bus import monitor_bus, Event
 from src.core.factory import AgentFactory
-from src.core.config_store import init_config_db, SessionLocal, AgentConfig
-from src.utils.migrate_v3 import migrate
-
-def ensure_config_exists():
-    # Ensure tables exist first
-    try:
-        init_config_db()
-    except Exception as e:
-        print(f"Error initializing DB schema: {e}")
-
-    db = SessionLocal()
-    try:
-        # Check if empty
-        if db.query(AgentConfig).count() == 0:
-            print("Config DB empty. Running migration...")
-            migrate()
-    except Exception as e:
-        print(f"Error checking config DB: {e}. Running migration might fix it.")
-        migrate()
-    finally:
-        db.close()
 
 def main():
     parser = argparse.ArgumentParser(description="RLM++ CLI")
@@ -44,8 +23,6 @@ def main():
     evolve_parser.add_argument("--reason", help="Reason for evolution (simulated failure)")
 
     args = parser.parse_args()
-
-    ensure_config_exists()
 
     if args.command == "ingest":
         # We keep Indexer as class for now, as it's not fully migrated to Agent config yet

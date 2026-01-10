@@ -30,6 +30,5 @@ class LLMConfig:
 
     # Database
     DB_PATH: str = "data/rlm.db"
-    CONFIG_DB_PATH: str = "data/config.db"
 
 config = LLMConfig()
