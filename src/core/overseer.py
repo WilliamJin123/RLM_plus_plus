@@ -23,9 +23,17 @@ class OverseerAgent:
         self.recent_tool_calls = []
 
     def on_event(self, event: Event):
+        # Truncate content to avoid context explosion
+        content = event.content
+        if len(content) > 500:
+            content = content[:500] + "...(truncated)"
+            
         if event.type == 'tool_call':
-            self.recent_tool_calls.append(event.content)
+            self.recent_tool_calls.append(content)
             self._check_health()
+        
+        # Optional: Print that overseer is alive
+        # print(f"[Overseer] Processed {event.type}")
 
     def _check_health(self):
         # Simple heuristic: if last 3 tool calls are identical, alarm.
@@ -35,6 +43,11 @@ class OverseerAgent:
                 print("OVERSEER ALERT: Loop detected.")
                 self.intervene("You seem to be repeating the same action. Try a different approach.")
                 self.recent_tool_calls = [] # Reset
+        
+        # Only check occasionally or if list gets too long
+        if len(self.recent_tool_calls) > 10:
+            self.recent_tool_calls = self.recent_tool_calls[-5:]
+
 
     def intervene(self, message: str):
         # In a real system, this would push a message to the RLM's context.

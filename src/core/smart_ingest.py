@@ -1,11 +1,11 @@
 import json
 from typing import Dict, Any
 from agno.agent import Agent
-from src.core.get_model import get_model
+from src.core.factory import AgentFactory
 
 class SmartIngestor:
     def __init__(self):
-        self.model = get_model()
+        self.model = AgentFactory.create_model()
         self.agent = Agent(
             model=self.model,
             description="You are an expert text segmenter.",

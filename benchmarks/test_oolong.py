@@ -46,7 +46,7 @@ def run_test():
     indexer = Indexer(db_path)
     
     # Use Large Scale settings
-    indexer.ingest_file(data_file, target_chunk_tokens=50000, group_size=2)
+    indexer.ingest_file(data_file, target_chunk_tokens=25000, group_size=2)
     
     print("---" + " Starting Agent Search" + " ---")
     # Use factory to create agent with NO HISTORY

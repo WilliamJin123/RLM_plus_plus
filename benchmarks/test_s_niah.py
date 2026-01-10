@@ -56,7 +56,7 @@ def run_test():
     indexer = Indexer(db_path)
     
     # Use Large Scale settings: 50k tokens per chunk, group 2 chunks for summary (100k context)
-    indexer.ingest_file(haystack_file, target_chunk_tokens=50000, group_size=2)
+    indexer.ingest_file(haystack_file, target_chunk_tokens=25000, group_size=2)
     print(f"Indexing took {time.time() - start_time:.2f}s")
     
     print("--- Starting Agent Search ---")
