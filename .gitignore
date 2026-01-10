@@ -6,6 +6,10 @@ __pycache__/
 **/*.venv
 
 
+**/browsecomp_plus/
+**/longbenchv2/data.json
+**/oolong/oolongbench___oolong-synth/
+
 # C extensions
 *.so
 
