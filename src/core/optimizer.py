@@ -2,23 +2,12 @@ import yaml
 import os
 from pathlib import Path
 from agno.agent import Agent
-from agno.models.openai import OpenAIChat
 from src.config.config import config
+from src.core.factory import AgentFactory
 
 class Optimizer:
     def __init__(self):
-        self.model = OpenAIChat(id=config.REASONING_MODEL_NAME)
-        self.agent = Agent(
-            model=self.model,
-            description="You are a System Optimizer.",
-            instructions=[
-                "Analyze the failure report from the RLM agent.",
-                "Decide if the failure is due to bad PROMPTS or missing TOOLS.",
-                "If bad prompts: rewrite the instruction in 'src/prompts/agent_prompt.yaml'.",
-                "If missing tools: write a NEW python tool in 'src/tools/dynamic/'.",
-                "Output your action as JSON."
-            ]
-        )
+        self.agent = AgentFactory.create_agent("optimizer-agent")
 
     def optimize_prompts(self, failure_reason: str):
         prompt_path = Path("src/prompts/agent_prompt.yaml")

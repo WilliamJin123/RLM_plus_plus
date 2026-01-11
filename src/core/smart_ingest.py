@@ -5,21 +5,7 @@ from src.core.factory import AgentFactory
 
 class SmartIngestor:
     def __init__(self):
-        self.model = AgentFactory.create_model()
-        self.agent = Agent(
-            model=self.model,
-            description="You are an expert text segmenter.",
-            instructions=[
-                "Analyze the provided text buffer.",
-                "Identify the best semantic stopping point (e.g., end of a paragraph, section, or topic) near the end of the text.",
-                "Determine how many lines of overlap are needed for the NEXT chunk to maintain context.",
-                "Return your response in strict JSON format: { 'cut_index': int, 'next_chunk_start_index': int, 'reasoning': str }",
-                "The 'cut_index' is the character index relative to the start of the text where the current chunk should end.",
-                "The 'next_chunk_start_index' is the character index where the next chunk should begin (usually < cut_index to allow overlap).",
-                "Do NOT return markdown blocks, just the JSON string."
-            ],
-            markdown=True
-        )
+        self.agent = AgentFactory.create_agent("smart-ingest-agent")
 
     def find_cut_point(self, text: str) -> Dict[str, Any]:
         """

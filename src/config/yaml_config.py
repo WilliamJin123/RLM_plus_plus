@@ -41,7 +41,8 @@ class AgentConfig:
     instructions: List[str]
     tools: List[str]
     model_settings: Dict[str, Any] # Keeping as dict for compatibility
-    storage_settings: Dict[str, Any] # Keeping as dict for compatibility
+    storage_settings: Optional[Dict[str, Any]] # Keeping as dict for compatibility
+    readonly_model: bool = False
 
 _cached_config: Optional[Dict[str, AgentConfig]] = None
 
@@ -54,14 +55,19 @@ def load_agents_config(path: str = "agents.yaml") -> Dict[str, AgentConfig]:
     
     yaml_path = Path(path)
     if not yaml_path.exists():
-        # Try finding it in project root if we are running from elsewhere
-        # Assuming current working directory might be different or src/...
-        # But for now, let's assume CWD or root.
-        root_path = Path(__file__).parent.parent.parent / "agents.yaml"
-        if root_path.exists():
-            yaml_path = root_path
+        # Check adjacent to this file (src/config/agents.yaml)
+        adjacent_path = Path(__file__).parent / "agents.yaml"
+        if adjacent_path.exists():
+            yaml_path = adjacent_path
         else:
-             raise FileNotFoundError(f"Configuration file {path} not found.")
+            # Try finding it in project root if we are running from elsewhere
+            # Assuming current working directory might be different or src/...
+            # But for now, let's assume CWD or root.
+            root_path = Path(__file__).parent.parent.parent / "agents.yaml"
+            if root_path.exists():
+                yaml_path = root_path
+            else:
+                 raise FileNotFoundError(f"Configuration file {path} not found.")
 
     with open(yaml_path, 'r') as f:
         data = yaml.safe_load(f)
@@ -69,7 +75,8 @@ def load_agents_config(path: str = "agents.yaml") -> Dict[str, AgentConfig]:
     configs = {}
     for agent_id, agent_data in data.items():
         model_data = agent_data.get("model", {})
-        storage_data = agent_data.get("storage", {})
+        storage_data = agent_data.get("storage", None)
+        readonly = agent_data.get("readonly_model", False)
         
         # We store them as dicts to match what AgentFactory expects (it expects TypedDict/JSON)
         # But we could also use objects if we updated Factory.
@@ -80,7 +87,8 @@ def load_agents_config(path: str = "agents.yaml") -> Dict[str, AgentConfig]:
             instructions=agent_data.get("instructions", []),
             tools=agent_data.get("tools", []),
             model_settings=model_data,
-            storage_settings=storage_data
+            storage_settings=storage_data,
+            readonly_model=readonly
         )
     
     _cached_config = configs
@@ -90,9 +98,13 @@ def save_agents_config(configs: Dict[str, AgentConfig], path: str = "agents.yaml
     global _cached_config
     yaml_path = Path(path)
     if not yaml_path.exists():
-         root_path = Path(__file__).parent.parent.parent / "agents.yaml"
-         if root_path.exists():
-             yaml_path = root_path
+         adjacent_path = Path(__file__).parent / "agents.yaml"
+         if adjacent_path.exists():
+             yaml_path = adjacent_path
+         else:
+             root_path = Path(__file__).parent.parent.parent / "agents.yaml"
+             if root_path.exists():
+                 yaml_path = root_path
     
     data = {}
     for agent_id, config in configs.items():
@@ -100,7 +112,8 @@ def save_agents_config(configs: Dict[str, AgentConfig], path: str = "agents.yaml
             "instructions": config.instructions,
             "tools": config.tools,
             "model": config.model_settings,
-            "storage": config.storage_settings
+            "storage": config.storage_settings,
+            "readonly_model": config.readonly_model
         }
     
     with open(yaml_path, 'w') as f:

@@ -16,11 +16,11 @@ class TokenBuffer:
     def add_text(self, text: str):
         """Appends text to the buffer and updates token count."""
         self.buffer += text
-        # Recalculating full buffer tokens is safer than incremental for multi-byte char issues,
-        # but slower. For now, we append. 
-        # Optimization: cache the count and only encode the new text?
-        # Let's just re-encode for safety in V1, or append tokens.
-        self._token_count = len(self.encoding.encode(self.buffer))
+        # Optimization: We sum the token counts of parts. 
+        # This effectively is an upper bound (conservative) because merging tokens usually reduces count.
+        # e.g. "a" + "pp" -> 2 tokens, "app" -> 1 token.
+        # This is safe for context window limits.
+        self._token_count += len(self.encoding.encode(text))
 
     def clear(self):
         self.buffer = ""

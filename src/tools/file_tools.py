@@ -4,13 +4,10 @@ from src.core.db import SessionLocal, Chunk, Summary
 from agno.agent import Agent
 from src.core.factory import AgentFactory
 
-def get_document_structure(ignore: str = "ignore") -> str:
+def get_document_structure() -> str:
     """
     Returns the top-level summaries (the 'root' or level N nodes) 
     to give an overview of the document.
-    
-    Args:
-        ignore: A dummy argument to ensure valid JSON input. Defaults to "ignore".
     """
     session = SessionLocal()
     # Find the highest level
@@ -77,12 +74,7 @@ def analyze_chunk(chunk_id: int, query: str) -> str:
     
     try:
         # Spawn a lightweight sub-agent to read the chunk
-        sub_agent = Agent(
-            model=AgentFactory.create_model(),
-            description="You are a precise reading assistant.",
-            instructions="Read the provided context and answer the user's question accurately. Do not add external information.",
-            markdown=True
-        )
+        sub_agent = AgentFactory.create_agent("chunk-analyzer-agent")
         
         prompt = f"Context:\n{text}\n\nQuestion: {query}"
         response = sub_agent.run(prompt)
