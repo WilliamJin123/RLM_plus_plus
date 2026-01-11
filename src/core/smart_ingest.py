@@ -22,7 +22,7 @@ class SmartIngestor:
             offset = len(text) - window_size
             text_to_analyze = text[offset:]
 
-        prompt = f"Analyze this text segment (which is the end of a larger buffer):\n\n---\n{text_to_analyze}\n---\n\nFind the best cut point relative to the start of THIS segment. Return 'cut_index' and 'next_chunk_start_index' as integers relative to the start of this provided text snippet."
+        prompt = f"Analyze this text segment (which is the end of a larger buffer):\n\n---\n{text_to_analyze}\n---\n\nFind the best cut point relative to the start of THIS segment. Return a JSON object with 'cut_index' (int), 'next_chunk_start_index' (int), and 'reasoning' (str). Indices must be relative to the start of this provided text snippet."
         
         try:
             response = self.agent.run(prompt)
@@ -34,6 +34,7 @@ class SmartIngestor:
                 content = content.split("```")[1].strip()
             
             data = json.loads(content)
+            data.setdefault('reasoning', 'No reasoning provided by LLM.')
             
             # The LLM gives indices relative to text_to_analyze.
             # We need to add offset to make them relative to 'text'.

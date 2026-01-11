@@ -29,8 +29,4 @@ class LLMConfig:
     # OpenRouter defaults if used
     OPENROUTER_MODEL_NAME: str = "meta-llama/llama-3.1-70b-instruct"
 
-    # Database
-    # Use absolute path based on project root to ensure robustness
-    DB_PATH: str = str(Path(__file__).resolve().parents[2] / "data" / "rlm.db")
-
 config = LLMConfig()

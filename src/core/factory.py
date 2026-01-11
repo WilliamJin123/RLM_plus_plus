@@ -5,7 +5,7 @@ from agno.db.sqlite import SqliteDb
 from agno.tracing import setup_tracing
 
 from src.tools.registry import registry
-from src.core.monitor_bus import monitored_tool
+
 from src.config.config import config
 import inspect
 
@@ -51,13 +51,7 @@ class AgentFactory:
         for tool_name in tool_names:
             if tool_name in tool_map:
                 tool_obj = tool_map[tool_name]
-                # Wrap callable tools (functions) with monitoring
-                if inspect.isfunction(tool_obj):
-                    # monitor_bus.monitored_tool uses functools.wraps, so metadata is preserved.
-                    wrapped_tool = monitored_tool(tool_obj)
-                    agent_tools.append(wrapped_tool)
-                else:
-                    agent_tools.append(tool_obj)
+                agent_tools.append(tool_obj)
             else:
                 print(f"Warning: Tool '{tool_name}' not found in registry.")
 
@@ -74,8 +68,19 @@ class AgentFactory:
         num_history = 0
 
         if storage_settings:
-            default_db_path = str(Path(__file__).resolve().parents[2] / "data" / "history.db")
-            db_path = storage_settings.get("db_path", default_db_path)
+            project_root = Path(__file__).resolve().parent.parent.parent
+            default_db_path = str(project_root / "data" / "history.db")
+            
+            db_path_param = storage_settings.get("db_path")
+            if db_path_param:
+                p = Path(db_path_param)
+                if not p.is_absolute():
+                    db_path = str(project_root / p)
+                else:
+                    db_path = db_path_param
+            else:
+                db_path = default_db_path
+
             session_table = storage_settings.get("session_table", "sessions")
             
             # Determine history settings (override > config > default)
@@ -84,6 +89,9 @@ class AgentFactory:
             num_history = storage_settings.get("num_history_runs", 5)
 
             if db_path and session_table:
+                # Ensure directory exists
+                Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+                
                 agent_db = SqliteDb(
                     db_file=db_path,
                     session_table=session_table

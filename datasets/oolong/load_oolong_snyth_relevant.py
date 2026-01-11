@@ -14,3 +14,14 @@ data_files = {
 if __name__=="__main__":
     ds_metaphors = load_dataset("parquet", data_files=data_files["metaphors"])["train"]
     print(len(ds_metaphors), "examples in metaphors dataset")
+    obj = {}
+    for column_name, value in ds_metaphors[0].items():
+        text_value = str(value)
+        
+        # Check if truncation is needed
+        if len(text_value) > 500:
+            display_text = text_value[:500] + f"\n... [TRUNCATED. Total length: {len(text_value)}]"
+        else:
+            display_text = text_value
+        obj[column_name] = display_text
+    print(obj)
