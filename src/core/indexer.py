@@ -101,6 +101,37 @@ class Indexer:
             
             print(f"Chunk created: {len(chunk_text)} chars. Reason: {decision['reasoning']}")
             
+            # --- IMMEDIATE STORAGE & SUMMARIZATION ---
+            
+            # 1. Store Chunk
+            chunk_id = storage.get_max_chunk_id() + 1
+            storage.add_chunks([{
+                "id": chunk_id,
+                "text": chunk_text,
+                "start_index": current_idx,
+                "end_index": real_cut_index
+            }])
+            
+            # 2. Store Level 0 Summary (Simultaneously generated)
+            summary_text = decision.get("summary", "No summary available.")
+            l0_id = storage.add_summaries([{
+                "summary_text": summary_text,
+                "level": 0,
+                "chunk_ids": str(chunk_id)
+            }])[0]
+            
+            # Keep track for next level
+            class SimpleSummary: pass
+            ss = SimpleSummary()
+            ss.id = l0_id
+            ss.summary_text = summary_text
+            ss.level = 0
+            
+            # We add to a list that will be used for Level 1
+            if 'level_0_summaries_accumulator' not in locals():
+                level_0_summaries_accumulator = []
+            level_0_summaries_accumulator.append(ss)
+            
             current_idx = real_next_start
             
             if current_idx >= len(full_text):
@@ -109,71 +140,10 @@ class Indexer:
                 print("Zero length chunk detected. Force advancing.")
                 current_idx += 100 
         
-        # Batch write chunks to DB
-        # We need to assign IDs to link them to summaries later.
-        # Use get_max_chunk_id() to safely determine the next ID, avoiding overwrites if gaps exist.
-        start_id = storage.get_max_chunk_id() + 1
-        
-        chunks_payload = []
-        db_chunks_simulated = []
-        
-        for i, c in enumerate(chunks_data):
-            c_id = start_id + i
-            payload = {
-                "id": c_id,
-                "text": c['text'],
-                "start_index": c['start_index'],
-                "end_index": c['end_index']
-            }
-            chunks_payload.append(payload)
-            
-            # Create a simple object to mimic the old 'Chunk' object for the next loop
-            # capable of accessing .text and .id
-            class SimpleChunk:
-                pass
-            sc = SimpleChunk()
-            sc.id = c_id
-            sc.text = c['text']
-            db_chunks_simulated.append(sc)
-            
-        storage.add_chunks(chunks_payload)
-        print(f"Stored {len(db_chunks_simulated)} chunks (DB).")
-
-        # 2. Level 0 Summarization (1-to-1 for each chunk)
-        print("Generating Level 0 Summaries (1 per chunk)...")
-        current_level_summaries = []
-        db_chunks = db_chunks_simulated 
-        
-        for chunk in db_chunks:
-            # Summarize EACH chunk individually
-            summary_text = self.summarize_text(chunk.text)
-            # time.sleep(0.5) # Slight delay if needed, though 1-to-1 might be faster or slower depending on model
-            
-            current_level_summaries.append({
-                "summary_text": summary_text,
-                "level": 0,
-                "chunk_ids": str(chunk.id) # 1-to-1 mapping
-            })
-            
-        # Write Level 0
-        l0_ids = storage.add_summaries(current_level_summaries)
-        
-        # Convert to objects for next level
-        next_gen_objects = []
-        for idx, s_data in enumerate(current_level_summaries):
-            class SimpleSummary:
-                pass
-            ss = SimpleSummary()
-            ss.id = l0_ids[idx]
-            ss.summary_text = s_data["summary_text"]
-            ss.level = 0
-            next_gen_objects.append(ss)
-            
-        current_level_summaries = next_gen_objects # Swap variable for the loop
-        
-        print(f"Created {len(current_level_summaries)} Level 0 summaries.")
+        print(f"Ingestion Pass Complete. Stored {len(level_0_summaries_accumulator)} chunks and Level 0 summaries.")
 
         # 3. Recursive Summarization
+        current_level_summaries = level_0_summaries_accumulator
         level = 1
         while len(current_level_summaries) > 1:
             next_level_payloads = []

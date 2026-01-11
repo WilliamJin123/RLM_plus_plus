@@ -9,26 +9,28 @@ class SmartIngestor:
 
     def find_cut_point(self, text: str) -> Dict[str, Any]:
         """
-        Asks the LLM to find the best cut point in the text.
-        Returns indices relative to the start of 'text'.
+        Asks the LLM to find the best cut point in the text AND summarize the resulting chunk.
+        Returns indices relative to the start of 'text' and the summary.
         """
-        # We only send the last part of the buffer to save tokens, 
-        # as the cut point must be near the end.
-        window_size = 2000
-        offset = 0
+        # We now send the FULL text segment to allow the LLM to summarize the chunk it creates.
+        # Previously we only sent the window, but that prevented simultaneous summarization.
         text_to_analyze = text
         
-        if len(text) > window_size:
-            offset = len(text) - window_size
-            text_to_analyze = text[offset:]
+        # Calculate offset is 0 since we are using the full text
+        offset = 0
 
         prompt = (
-            f"Analyze this text segment (length: {len(text_to_analyze)} chars), which is the end of a larger buffer:\n\n"
+            f"Analyze this text segment (length: {len(text_to_analyze)} chars), which is a candidate for a document chunk:\n\n"
             f"---\n{text_to_analyze}\n---\n\n"
-            f"Find the best cut point relative to the start of THIS segment (0 to {len(text_to_analyze)}). "
-            "Return a JSON object with 'cut_index' (int), 'next_chunk_start_index' (int), and 'reasoning' (str). "
-            "CRITICAL: 'next_chunk_start_index' MUST be less than 'cut_index' to create an overlap. "
-            "Indices must be strictly within the range [0, length_of_segment]."
+            f"Task 1: Find the best semantic cut point (natural stopping point) for this chunk.\n"
+            f"Task 2: Determine where the NEXT chunk should start (create an overlap).\n"
+            f"Task 3: Write a concise summary of the text FROM THE START up to your chosen cut point.\n\n"
+            "Return a JSON object with:\n"
+            "- 'cut_index' (int): Relative index (0 to length) where this chunk ends.\n"
+            "- 'next_chunk_start_index' (int): Relative index where the next chunk begins (MUST be < cut_index).\n"
+            "- 'reasoning' (str): Why you chose this point.\n"
+            "- 'summary' (str): The summary of the chunk content.\n\n"
+            "CRITICAL: Indices must be strictly within the range [0, length_of_segment]."
         )
         
         try:
@@ -51,6 +53,7 @@ class SmartIngestor:
             print(f"[SmartIngest] Parsed JSON: {data}")
 
             data.setdefault('reasoning', 'No reasoning provided by LLM.')
+            data.setdefault('summary', 'No summary provided by LLM.')
             
             # --- VALIDATION & SANITIZATION ---
             
@@ -93,5 +96,6 @@ class SmartIngestor:
             return {
                 "cut_index": cut_idx,
                 "next_chunk_start_index": max(0, cut_idx - overlap),
-                "reasoning": "Fallback due to error."
+                "reasoning": "Fallback due to error.",
+                "summary": "Fallback summary due to error."
             }
