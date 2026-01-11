@@ -102,13 +102,14 @@ def test_smart_ingestion_toy_models(mock_get_config, tmp_path):
     indexer.ingest_file(str(text_file), target_chunk_tokens=50, group_size=2)
     
     # 4. Verification
-    # Connect to DB and check results via storage
+    # Connect to DB and check results via sqlite3 directly
+    import sqlite3
+    import pandas as pd
+    
+    conn = sqlite3.connect(str(db_path))
     try:
-        chunk_table = storage.db.open_table("chunks")
-        chunks = chunk_table.to_pandas()
-        
-        summary_table = storage.db.open_table("summaries")
-        summaries = summary_table.to_pandas()
+        chunks = pd.read_sql_query("SELECT * FROM chunks", conn)
+        summaries = pd.read_sql_query("SELECT * FROM summaries", conn)
         
         print(f"\nChunks Found: {len(chunks)}")
         for _, c in chunks.iterrows():
@@ -131,8 +132,7 @@ def test_smart_ingestion_toy_models(mock_get_config, tmp_path):
             assert chunks[i+1]['start_index'] <= chunks[i]['end_index']
             
     finally:
-        # No session to close
-        pass
+        conn.close()
 
 if __name__ == "__main__":
     # Manually run the test function if executed directly

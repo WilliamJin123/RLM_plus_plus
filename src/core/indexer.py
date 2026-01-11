@@ -1,4 +1,5 @@
 from pathlib import Path
+import time
 from agno.agent import Agent
 
 from agno.db.sqlite import SqliteDb
@@ -18,9 +19,13 @@ class Indexer:
         self.agent = AgentFactory.create_agent("summarization-agent")
 
     def summarize_text(self, text: str) -> str:
-        prompt = f"Summarize:\n\n{text}"
-        response = self.agent.run(prompt)
-        return str(response.content)
+        try:
+            prompt = f"Summarize:\n\n{text}"
+            response = self.agent.run(prompt)
+            return str(response.content)
+        except Exception as e:
+            print(f"Error summarizing text: {e}")
+            return "Error generating summary."
 
     def ingest_file(self, file_path: str, target_chunk_tokens: int = 1000, group_size: int = 2) -> None:
         """
@@ -33,6 +38,7 @@ class Indexer:
             group_size: How many chunks (or lower-level summaries) to group together when 
                         creating the next level of the summary hierarchy. Defaults to 2 (i.e., binary tree).
         """
+        print(f"DEBUG: Starting ingest_file with target_chunk_tokens={target_chunk_tokens}, group_size={group_size}")
         path = Path(file_path)
         with path.open('r', encoding='utf-8') as f:
             full_text = f.read()
@@ -49,6 +55,7 @@ class Indexer:
             lookahead_chars = target_chunk_tokens * 5 
             end_candidate = min(current_idx + lookahead_chars, len(full_text))
             
+            # The segment we are analyzing (from current position forward)
             segment = full_text[current_idx:end_candidate]
             
             if end_candidate == len(full_text):
@@ -59,11 +66,24 @@ class Indexer:
                     "reasoning": "End of file."
                 })
                 break
-                
+            
+            # SmartIngestor returns indices relative to the start of 'segment'
             decision = ingestor.find_cut_point(segment)
             
-            real_cut_index = current_idx + decision['cut_index']
-            real_next_start = current_idx - decision['next_chunk_start_index']
+            relative_cut_index = decision['cut_index']
+            relative_next_start_index = decision['next_chunk_start_index']
+            
+            print(f"DEBUG: SmartIngest Returned Relative -> Cut: {relative_cut_index}, NextStart: {relative_next_start_index}")
+
+            # Convert to absolute indices in full_text
+            # Note: We ADD because these are indices relative to the start of the segment (current_idx)
+            real_cut_index = current_idx + relative_cut_index
+            real_next_start = current_idx + relative_next_start_index
+            
+            print(f"DEBUG: Absolute Indices -> Cut: {real_cut_index}, NextStart: {real_next_start}")
+            print(f"DEBUG: Calculated Overlap: {real_cut_index - real_next_start} chars")
+
+            # Overlap happens if real_next_start < real_cut_index
             
             # Ensure continuity: next chunk must start at or before current chunk ends
             if real_next_start > real_cut_index:
@@ -90,25 +110,9 @@ class Indexer:
                 current_idx += 100 
         
         # Batch write chunks to DB
-        # We need to assign IDs or let storage handle it. 
-        # But we need the IDs for the next step. 
-        # storage.add_chunks handles ID generation if not provided, 
-        # but to get them back effectively we might want to pre-assign or query back.
-        # The storage implementation assigns ID = count + index. 
-        # Let's rely on that logic, but to be safe/explicit, let's fetch current count first?
-        # Actually, let's just create the dicts and pass them.
-        
-        # To get IDs back, we can just query the last N items or assume sequentiality.
-        # Or better, refactor add_chunks to return IDs? 
-        # The storage class I wrote didn't return IDs for chunks. 
-        # Let's update indexer to just re-read or trust the sequential nature.
-        # Actually, simplest is to just assume standard auto-inc behavior since we are single threaded here.
-        
-        # Let's verify storage.add_chunks behavior in previous step... 
-        # It assigns: c["id"] = current_count + i + 1.
-        
-        # So we can calculate IDs here locally.
-        start_id = storage.get_chunk_count() + 1
+        # We need to assign IDs to link them to summaries later.
+        # Use get_max_chunk_id() to safely determine the next ID, avoiding overwrites if gaps exist.
+        start_id = storage.get_max_chunk_id() + 1
         
         chunks_payload = []
         db_chunks_simulated = []
@@ -144,12 +148,10 @@ class Indexer:
             group = db_chunks[i:i+group_size]
             combined_text = "\n\n".join([c.text for c in group])
             summary_text = self.summarize_text(combined_text)
+            time.sleep(1) # Prevent rate limiting
             
             chunk_ids = ",".join([str(c.id) for c in group])
             
-            # We collect them to batch add? Or add one by one?
-            # storage.add_summaries is batched.
-            # Let's collect them.
             current_level_summaries.append({
                 "summary_text": summary_text,
                 "level": 0,
@@ -183,23 +185,18 @@ class Indexer:
                 group = current_level_summaries[i:i+group_size]
                 combined_text = "\n\n".join([s.summary_text for s in group])
                 summary_text = self.summarize_text(combined_text)
+                time.sleep(1) # Prevent rate limiting
                 
                 next_level_payloads.append({
                     "summary_text": summary_text,
                     "level": level,
-                    # We need to link children to this new parent.
-                    # But in the old code: s.parent_id = new_summary.id
-                    # Here we can't update children easily without a re-write/update query.
-                    # DB supports updates. 
-                    # But we don't have the parent ID yet.
-                    # Strategy: Create parents first, get IDs, then update children.
+                    # Parent IDs will be assigned after batch insertion
                 })
             
             # Batch create parents
             parent_ids = storage.add_summaries(next_level_payloads)
             
             # Now update children with parent_ids
-            # We need to map group -> parent_id
             
             # Create next gen objects for next iteration
             next_gen_objects = []
