@@ -89,7 +89,7 @@ class Indexer:
                 print("Zero length chunk detected. Force advancing.")
                 current_idx += 100 
         
-        # Batch write chunks to LanceDB
+        # Batch write chunks to DB
         # We need to assign IDs or let storage handle it. 
         # But we need the IDs for the next step. 
         # storage.add_chunks handles ID generation if not provided, 
@@ -108,8 +108,7 @@ class Indexer:
         # It assigns: c["id"] = current_count + i + 1.
         
         # So we can calculate IDs here locally.
-        chunk_table = storage.db.open_table("chunks")
-        start_id = len(chunk_table) + 1
+        start_id = storage.get_chunk_count() + 1
         
         chunks_payload = []
         db_chunks_simulated = []
@@ -134,7 +133,7 @@ class Indexer:
             db_chunks_simulated.append(sc)
             
         storage.add_chunks(chunks_payload)
-        print(f"Stored {len(db_chunks_simulated)} chunks (LanceDB).")
+        print(f"Stored {len(db_chunks_simulated)} chunks (DB).")
 
         # 2. Level 0 Summarization
         current_level_summaries = []
@@ -191,7 +190,7 @@ class Indexer:
                     # We need to link children to this new parent.
                     # But in the old code: s.parent_id = new_summary.id
                     # Here we can't update children easily without a re-write/update query.
-                    # LanceDB supports updates. 
+                    # DB supports updates. 
                     # But we don't have the parent ID yet.
                     # Strategy: Create parents first, get IDs, then update children.
                 })
@@ -205,7 +204,7 @@ class Indexer:
             # Create next gen objects for next iteration
             next_gen_objects = []
             
-            summary_table = storage.db.open_table("summaries")
+            summary_table = None # Not needed in SQLite version
             
             # We iterate again to match groups to parent IDs
             parent_idx = 0
@@ -216,8 +215,7 @@ class Indexer:
                 # Update children
                 for child in group:
                     # Execute Update: UPDATE summaries SET parent_id = p_id WHERE id = child.id
-                    # LanceDB update syntax:
-                    summary_table.update(where=f"id = {child.id}", values={"parent_id": p_id})
+                    storage.update_summary_parent(child.id, p_id)
                 
                 # Prepare object for next level
                 class SimpleSummary: pass
