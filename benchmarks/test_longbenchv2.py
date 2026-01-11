@@ -8,12 +8,12 @@ from pathlib import Path
 from typing import List, Dict, Any
 
 # Ensure src is in path if running from root
-sys.path.append(Path(__file__).resolve().parent.parent.as_posix())
+BASE_DIR = Path(__file__).resolve().parent.parent
+sys.path.append(BASE_DIR.as_posix())
 
 from src.core.indexer import Indexer
 from src.core.factory import AgentFactory
-from src.core.db import init_db
-from src.core.overseer import overseer # Importing instantiates it and subscribes to bus
+# from src.core.overseer import overseer # Overseer was deleted previously
 
 def load_dataset(dataset_path: str) -> List[Dict[str, Any]]:
     print(f"Loading dataset from {dataset_path}...")
@@ -35,7 +35,7 @@ def ingest_context(indexer: Indexer, context: str):
     
     try:
         # Ingest the file
-        indexer.ingest_file(tmp_path, target_chunk_tokens=25000, group_size=2)
+        indexer.ingest_file(tmp_path, target_chunk_tokens=40000, group_size=2)
     except Exception as e:
         print(f"Error during ingestion: {e}")
     finally:
@@ -71,11 +71,10 @@ def evaluate_answer(agent_response: str, correct_answer: str) -> bool:
 
 def run_benchmark(dataset_name: str, limit: int = None):
     # Paths
-    base_dir = Path(__file__).parent.parent
     if dataset_name == "code_qa":
-        file_path = base_dir / "datasets" / "longbenchv2" / "code_qa.json"
+        file_path = BASE_DIR / "datasets" / "longbenchv2" / "code_qa.json"
     elif dataset_name == "history_qa":
-        file_path = base_dir / "datasets" / "longbenchv2" / "history_qa.json"
+        file_path = BASE_DIR / "datasets" / "longbenchv2" / "history_qa.json"
     else:
         raise ValueError("Invalid dataset name. Choose 'code_qa' or 'history_qa'.")
         
@@ -91,7 +90,7 @@ def run_benchmark(dataset_name: str, limit: int = None):
     correct_count = 0
     total_count = 0
     
-    db_path = "data/longbench_temp.db"
+    db_path = str(BASE_DIR / "data" / "longbench_temp.db")
     
     for item in data:
         print(f"\n--- Processing Item {total_count + 1}/{len(data)} ---")
@@ -154,7 +153,7 @@ def run_benchmark(dataset_name: str, limit: int = None):
         try:
             response = agent.run(prompt)
             content = str(response.content)
-            print(f"Agent Response: {content[:200]}...") 
+            print(f"Agent Response: {content}") 
             
             answer = item['answer']
             is_correct = evaluate_answer(content, answer)

@@ -23,7 +23,7 @@ rlm-agent:
   - PythonTools
   model:
     provider: cerebras
-    model_id: qwen-3-235b-a22b-instruct-2507
+    model_id: zai-glm-4.7
     temperature: 0.0
   storage:
     db_path: data/rlm_agent.db
@@ -33,60 +33,18 @@ rlm-agent:
     read_chat_history: false
   readonly_model: false
 
-overseer:
-  instructions:
-  - You are the Overseer. Your job is to monitor the RLM Agent's thoughts and actions.
-  - Ensure the agent is making progress and not looping.
-  - If the agent is stuck, provide a hint or direction.
-  - Do not interfere if the agent is proceeding logically.
-  tools: []
-  model:
-    provider: openrouter
-    model_id: tngtech/deepseek-r1t2-chimera:free
-    temperature: 0.1
-  storage:
-    db_path: data/overseer.db
-    session_table: overseer_sessions
-    add_history_to_context: true
-    num_history_runs: 10
-    read_chat_history: true
-  readonly_model: true
-
-architect:
-  instructions:
-  - You are the Architect. You have the power to modify the behavior of other agents.
-  - You optimize the system by analyzing performance logs and updating agent configurations.
-  - You can update instructions, tools, and model parameters.
-  tools:
-  - update_instructions
-  - add_tool
-  - remove_tool
-  - update_model_params
-  - analyze_agent_history
-  model:
-    provider: cerebras
-    model_id: zai-glm-4.7
-    temperature: 0.0
-  storage:
-    db_path: data/architect.db
-    session_table: architect_sessions
-    add_history_to_context: true
-    num_history_runs: 5
-    read_chat_history: true
-  readonly_model: true
-
 summarization-agent:
   instructions:
   - Summarize texts concisely, capturing key facts and entities.
   - They must encapsulate the main points clearly, and give enough context for a person to realize when they should read the full text.
   tools: []
   model:
-    provider: openrouter
-    model_id: nvidia/nemotron-3-nano-30b-a3b:free
+    provider: cerebras
+    model_id: qwen-3-235b-a22b-instruct-2507
     temperature: 0.0
   storage:
     db_path: data/sumarization_agent.db
-    session_table: summarization_agent_sessions
+    session_table: llama-3.3-70b
     add_history_to_context: false
     num_history_runs: 0
     read_chat_history: false
@@ -103,8 +61,8 @@ smart-ingest-agent:
   - Do NOT return markdown blocks, just the JSON string.
   tools: []
   model:
-    provider: openrouter
-    model_id: meta-llama/llama-3.1-405b-instruct:free
+    provider: cerebras
+    model_id: llama-3.3-70b
     temperature: 0.0
   storage: null
   readonly_model: true
@@ -118,34 +76,6 @@ chunk-analyzer-agent:
   model:
     provider: cerebras
     model_id: qwen-3-235b-a22b-instruct-2507
-    temperature: 0.0
-  storage: null
-  readonly_model: true
-
-history-analyzer-agent:
-  instructions:
-  - You are an expert system analyst.
-  - Analyze the provided agent interaction logs and answer the user's question.
-  tools: []
-  model:
-    provider: cerebras
-    model_id: llama-3.3-70b
-    temperature: 0.0
-  storage: null
-  readonly_model: true
-
-optimizer-agent:
-  instructions:
-  - You are a System Optimizer.
-  - Analyze the failure report from the RLM agent.
-  - Decide if the failure is due to bad PROMPTS or missing TOOLS.
-  - If bad prompts: rewrite the instruction in 'src/prompts/agent_prompt.yaml'.
-  - If missing tools: write a NEW python tool in 'src/tools/dynamic/'.
-  - Output your action as JSON.
-  tools: []
-  model:
-    provider: cerebras
-    model_id: zai-glm-4.7
     temperature: 0.0
   storage: null
   readonly_model: true

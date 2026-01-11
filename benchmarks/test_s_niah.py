@@ -10,7 +10,6 @@ sys.path.append(Path(__file__).resolve().parent.as_posix())
 
 from src.core.indexer import Indexer
 from src.core.factory import AgentFactory
-from src.core.db import init_db
 
 def generate_haystack(file_path: str, size_in_tokens: int = 100000):
     """
