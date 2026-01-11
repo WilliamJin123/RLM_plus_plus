@@ -139,23 +139,20 @@ class Indexer:
         storage.add_chunks(chunks_payload)
         print(f"Stored {len(db_chunks_simulated)} chunks (DB).")
 
-        # 2. Level 0 Summarization
+        # 2. Level 0 Summarization (1-to-1 for each chunk)
+        print("Generating Level 0 Summaries (1 per chunk)...")
         current_level_summaries = []
-        # Use db_chunks_simulated instead of db_chunks
         db_chunks = db_chunks_simulated 
         
-        for i in range(0, len(db_chunks), group_size):
-            group = db_chunks[i:i+group_size]
-            combined_text = "\n\n".join([c.text for c in group])
-            summary_text = self.summarize_text(combined_text)
-            time.sleep(1) # Prevent rate limiting
-            
-            chunk_ids = ",".join([str(c.id) for c in group])
+        for chunk in db_chunks:
+            # Summarize EACH chunk individually
+            summary_text = self.summarize_text(chunk.text)
+            # time.sleep(0.5) # Slight delay if needed, though 1-to-1 might be faster or slower depending on model
             
             current_level_summaries.append({
                 "summary_text": summary_text,
                 "level": 0,
-                "chunk_ids": chunk_ids
+                "chunk_ids": str(chunk.id) # 1-to-1 mapping
             })
             
         # Write Level 0
