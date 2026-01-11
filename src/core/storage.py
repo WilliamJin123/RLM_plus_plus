@@ -1,78 +1,90 @@
-import lancedb
-from lancedb.pydantic import LanceModel, Vector
-from pydantic import Field
+import sqlite3
 from typing import List, Optional
 from pathlib import Path
-from src.config.config import config
-
-# Define Schema using Pydantic (LanceDB style)
-class ChunkModel(LanceModel):
-    id: int
-    text: str
-    start_index: int
-    end_index: int
-    # Vector support ready for future (optional for now)
-    # vector: Vector(1536) = None 
-
-class SummaryModel(LanceModel):
-    id: int
-    summary_text: str
-    level: int
-    parent_id: Optional[int] = None
-    chunk_ids: Optional[str] = None # Comma separated for now
 
 class StorageEngine:
     def __init__(self, db_path: str = None):
         if db_path is None:
-            # Use a 'lancedb' folder alongside the old sqlite one
             project_root = Path(__file__).resolve().parent.parent.parent
-            db_path = str(project_root / "data" / "lancedb_store")
+            # Switch to .db file
+            db_path = str(project_root / "data" / "rlm_storage.db")
         
-        self.db = lancedb.connect(db_path)
-        
-        # Initialize tables if they don't exist
+        self.db_path = db_path
+        # Ensure parent directory exists
+        Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
         self._init_tables()
+
+    def _get_connection(self):
+        return sqlite3.connect(self.db_path)
 
     def reset(self, db_path: str):
         """
         Re-connects to a different database path. 
-        Useful for benchmarks or isolated tests.
         """
-        if db_path:
-            self.db = lancedb.connect(db_path)
-            self._init_tables()
+        self.db_path = db_path
+        if self.db_path:
+             Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
+        self._init_tables()
 
     def _init_tables(self):
-        # Create tables if not exist. 
-        # Note: LanceDB 'create_table' with schema creates an empty table.
-        try:
-            self.db.create_table("chunks", schema=ChunkModel, exist_ok=True)
-            self.db.create_table("summaries", schema=SummaryModel, exist_ok=True)
-        except Exception as e:
-            print(f"Error initializing tables: {e}")
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS chunks (
+                id INTEGER PRIMARY KEY,
+                text TEXT,
+                start_index INTEGER,
+                end_index INTEGER
+            )
+        """)
+        
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS summaries (
+                id INTEGER PRIMARY KEY,
+                summary_text TEXT,
+                level INTEGER,
+                parent_id INTEGER,
+                chunk_ids TEXT
+            )
+        """)
+        
+        conn.commit()
+        conn.close()
+
+    def get_chunk_count(self) -> int:
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM chunks")
+        count = cursor.fetchone()[0]
+        conn.close()
+        return count
 
     def add_chunks(self, chunks: List[dict]):
         """
         Bulk add chunks.
-        chunks: List of dicts matching ChunkModel fields.
+        chunks: List of dicts with keys: text, start_index, end_index, (optional) id.
         """
         if not chunks:
             return
             
-        # Get current max ID to auto-increment
-        table = self.db.open_table("chunks")
-        # Optimization: fast count
-        current_count = len(table)
+        conn = self._get_connection()
+        cursor = conn.cursor()
         
-        # Assign IDs
-        processed = []
-        for i, c in enumerate(chunks):
-            # If ID not provided, assign one
-            if "id" not in c:
-                c["id"] = current_count + i + 1
-            processed.append(ChunkModel(**c))
-            
-        table.add(processed)
+        for c in chunks:
+            if "id" in c:
+                cursor.execute(
+                    "INSERT OR REPLACE INTO chunks (id, text, start_index, end_index) VALUES (?, ?, ?, ?)",
+                    (c["id"], c["text"], c["start_index"], c["end_index"])
+                )
+            else:
+                 cursor.execute(
+                    "INSERT INTO chunks (text, start_index, end_index) VALUES (?, ?, ?)",
+                    (c["text"], c["start_index"], c["end_index"])
+                )
+        
+        conn.commit()
+        conn.close()
 
     def add_summaries(self, summaries: List[dict]) -> List[int]:
         """
@@ -81,115 +93,131 @@ class StorageEngine:
         if not summaries:
             return []
             
-        table = self.db.open_table("summaries")
-        current_count = len(table)
+        conn = self._get_connection()
+        cursor = conn.cursor()
         
-        processed = []
         ids = []
-        for i, s in enumerate(summaries):
-            if "id" not in s:
-                s_id = current_count + i + 1
-                s["id"] = s_id
-            else:
-                s_id = s["id"]
-                
-            processed.append(SummaryModel(**s))
-            ids.append(s_id)
+        for s in summaries:
+            s_id = s.get("id")
+            parent_id = s.get("parent_id")
+            chunk_ids = s.get("chunk_ids")
             
-        table.add(processed)
+            if s_id:
+                cursor.execute(
+                    "INSERT OR REPLACE INTO summaries (id, summary_text, level, parent_id, chunk_ids) VALUES (?, ?, ?, ?, ?)",
+                    (s_id, s["summary_text"], s["level"], parent_id, chunk_ids)
+                )
+                ids.append(s_id)
+            else:
+                cursor.execute(
+                    "INSERT INTO summaries (summary_text, level, parent_id, chunk_ids) VALUES (?, ?, ?, ?)",
+                    (s["summary_text"], s["level"], parent_id, chunk_ids)
+                )
+                ids.append(cursor.lastrowid)
+        
+        conn.commit()
+        conn.close()
         return ids
 
+    def update_summary_parent(self, summary_id: int, parent_id: int):
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("UPDATE summaries SET parent_id = ? WHERE id = ?", (parent_id, summary_id))
+        conn.commit()
+        conn.close()
+
     def get_document_structure(self) -> str:
-        summary_table = self.db.open_table("summaries")
-        df = summary_table.to_pandas()
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT MAX(level) FROM summaries")
+        highest_level = cursor.fetchone()[0]
         
-        if df.empty:
-            return "Document index is empty."
-            
-        highest_level = df["level"].max()
-        roots = df[df["level"] == highest_level]
+        if highest_level is None:
+             conn.close()
+             return "Document index is empty."
+             
+        cursor.execute("SELECT id, summary_text FROM summaries WHERE level = ?", (highest_level,))
+        roots = cursor.fetchall()
         
         structure = f"Document Structure (Highest Level: {highest_level}):\n"
-        for _, r in roots.iterrows():
-            structure += f"- [ID: {r['id']}] {r['summary_text'][:200]}...\n"
+        for r in roots:
+            structure += f"- [ID: {r[0]}] {r[1][:200]}...\n"
             
+        conn.close()
         return structure
 
     def get_summary_children(self, summary_id: int) -> str:
-        summary_table = self.db.open_table("summaries")
+        conn = self._get_connection()
+        cursor = conn.cursor()
         
-        # LanceDB SQL filtering (via DuckDB under hood usually, or pandas)
-        # For simple ID lookup, we can use filtering
-        s_df = summary_table.search().where(f"id = {summary_id}").limit(1).to_pandas()
+        cursor.execute("SELECT level, chunk_ids FROM summaries WHERE id = ?", (summary_id,))
+        res = cursor.fetchone()
         
-        if s_df.empty:
+        if not res:
+            conn.close()
             return f"Summary with ID {summary_id} not found."
             
-        summary = s_df.iloc[0]
+        level, chunk_ids_str = res
         
-        # Find children
-        children_df = summary_table.search().where(f"parent_id = {summary_id}").to_pandas()
+        cursor.execute("SELECT id, summary_text FROM summaries WHERE parent_id = ?", (summary_id,))
+        children = cursor.fetchall()
         
-        result = f"Children of Summary {summary_id} (Level {summary['level']}):\n"
+        result = f"Children of Summary {summary_id} (Level {level}):\n"
         
-        if not children_df.empty:
-            for _, c in children_df.iterrows():
-                result += f"- [Summary ID: {c['id']}] {c['summary_text'][:200]}...\n"
-        elif summary['level'] == 0:
-            # Parse chunk IDs
-            chunk_ids_str = summary['chunk_ids']
-            if chunk_ids_str:
-                chunk_table = self.db.open_table("chunks")
-                # Using 'IN' clause for filtering
-                # LanceDB SQL support: "id IN (1, 2, 3)"
-                
-                # Sanitize
-                clean_ids = chunk_ids_str.replace("[", "").replace("]", "")
-                if clean_ids:
-                    chunks_df = chunk_table.search().where(f"id IN ({clean_ids})").to_pandas()
-                    
-                    result += f"This is a leaf summary covering chunks: {clean_ids}\n"
-                    for _, ch in chunks_df.iterrows():
-                        result += f"- [Chunk ID: {ch['id']}] {ch['text'][:100]}...\n"
-                else:
-                    result += "No chunk IDs found in summary."
-            else:
-                result += "No chunk IDs linked."
-                
+        if children:
+            for c in children:
+                result += f"- [Summary ID: {c[0]}] {c[1][:200]}...\n"
+        elif level == 0:
+             if chunk_ids_str:
+                 clean_ids = chunk_ids_str.replace("[", "").replace("]", "")
+                 if clean_ids:
+                     # Basic input sanitization to ensure only numbers and commas
+                     if not all(c.isdigit() or c == ',' or c.isspace() for c in clean_ids):
+                         result += "Invalid chunk IDs format."
+                     else:
+                         query = f"SELECT id, text FROM chunks WHERE id IN ({clean_ids})"
+                         cursor.execute(query)
+                         chunks = cursor.fetchall()
+                         
+                         result += f"This is a leaf summary covering chunks: {clean_ids}\n"
+                         for ch in chunks:
+                             result += f"- [Chunk ID: {ch[0]}] {ch[1][:100]}...\n"
+                 else:
+                     result += "No chunk IDs found in summary."
+             else:
+                 result += "No chunk IDs linked."
+        
+        conn.close()
         return result
 
     def get_chunk_text(self, chunk_id: int) -> str:
-        chunk_table = self.db.open_table("chunks")
-        df = chunk_table.search().where(f"id = {chunk_id}").limit(1).to_pandas()
-        if df.empty:
-            return None
-        return df.iloc[0]['text']
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT text FROM chunks WHERE id = ?", (chunk_id,))
+        res = cursor.fetchone()
+        conn.close()
+        if res:
+            return res[0]
+        return None
 
     def search_summaries(self, query: str) -> str:
-        # Full text search? 
-        # LanceDB has FTS via .search(query) if index exists, or we can just scan for now.
-        # Since we haven't built an FTS index, we'll do a simple contains in pandas for MVP parity
-        # (LanceDB native FTS requires creating an index first).
+        conn = self._get_connection()
+        cursor = conn.cursor()
         
-        summary_table = self.db.open_table("summaries")
+        sql_query = "SELECT id, level, summary_text FROM summaries WHERE summary_text LIKE ?"
+        cursor.execute(sql_query, (f"%{query}%",))
+        matches = cursor.fetchmany(10)
         
-        # Efficient iteration or pandas filter
-        # For "faster than DB", let's use the Lance filtering if possible, 
-        # but Lance SQL 'LIKE' might not be fully available in basic mode without FTS.
-        # Fallback to pandas for flexibility in this prototype.
-        df = summary_table.to_pandas()
-        
-        # Simple case-insensitive search
-        matches = df[df['summary_text'].str.contains(query, case=False, na=False)].head(10)
-        
-        if matches.empty:
+        if not matches:
+            conn.close()
             return f"No summaries found matching '{query}'."
-        
-        output = f"Search results for '{query}':\n"
-        for _, r in matches.iterrows():
-            output += f"- [Summary ID: {r['id']}, Level: {r['level']}] {r['summary_text'][:200]}...\n"
             
+        output = f"Search results for '{query}':\n"
+        for r in matches:
+            output += f"- [Summary ID: {r[0]}, Level: {r[1]}] {r[2][:200]}...\n"
+            
+        conn.close()
         return output
 
-# Global instance for simplicity, similar to SessionLocal pattern but cleaner
+# Global instance
 storage = StorageEngine()
