@@ -29,7 +29,7 @@ class AgentFactory:
         wrapper = MultiProviderWrapper.from_env(
             provider=provider,
             default_model_id=model_id,
-            env_file=Path(__file__).resolve().parent.parent / ".env",
+            env_file=Path(__file__).resolve().parents[2] / ".env",
             temperature=temperature
         )
         model = wrapper.get_model()
@@ -74,7 +74,8 @@ class AgentFactory:
         num_history = 0
 
         if storage_settings:
-            db_path = storage_settings.get("db_path", "data/history.db")
+            default_db_path = str(Path(__file__).resolve().parents[2] / "data" / "history.db")
+            db_path = storage_settings.get("db_path", default_db_path)
             session_table = storage_settings.get("session_table", "sessions")
             
             # Determine history settings (override > config > default)

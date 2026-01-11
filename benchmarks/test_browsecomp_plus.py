@@ -1,5 +1,10 @@
 import os
 import time
+import sys
+from pathlib import Path
+
+sys.path.append(Path(__file__).resolve().parent.as_posix())
+
 from src.core.indexer import Indexer
 from src.core.factory import AgentFactory
 

@@ -2,6 +2,12 @@ import os
 import random
 import uuid
 import time
+
+import sys
+from pathlib import Path
+
+sys.path.append(Path(__file__).resolve().parent.as_posix())
+
 from src.core.indexer import Indexer
 from src.core.factory import AgentFactory
 from src.core.db import init_db
