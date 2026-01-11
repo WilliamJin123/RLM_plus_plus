@@ -46,28 +46,37 @@ class AgentConfig:
 
 _cached_config: Optional[Dict[str, AgentConfig]] = None
 
-def load_agents_config(path: str = "agents.yaml") -> Dict[str, AgentConfig]:
+def load_agents_config(path: str = None) -> Dict[str, AgentConfig]:
     global _cached_config
     # Refresh logic could be added here if we want to support hot-reloading from disk
     # For now, let's allow re-reading if explicit, but caching is fine for read-heavy.
     # However, architect tools need to write and read back.
     # So we should probably invalidate cache on write.
     
-    yaml_path = Path(path)
+    if path is None:
+        # Default to src/config/agents.yaml
+        yaml_path = Path(__file__).resolve().parent / "agents.yaml"
+    else:
+        yaml_path = Path(path)
+
     if not yaml_path.exists():
-        # Check adjacent to this file (src/config/agents.yaml)
+        # Fallback checks only if a custom path wasn't provided (or if the default somehow is missing)
+        # But if path was None, we really expect it to be there or fail.
+        # Let's keep the fallback logic only if path was NOT absolute/specific? 
+        # Actually, standard behavior: if file not found, check root?
+        # If we use absolute path by default, we don't need complex fallbacks for the default case.
+        
+        # Check adjacent to this file (src/config/agents.yaml) - redundant if default is set above
         adjacent_path = Path(__file__).parent / "agents.yaml"
         if adjacent_path.exists():
             yaml_path = adjacent_path
         else:
-            # Try finding it in project root if we are running from elsewhere
-            # Assuming current working directory might be different or src/...
-            # But for now, let's assume CWD or root.
+            # Try finding it in project root
             root_path = Path(__file__).parent.parent.parent / "agents.yaml"
             if root_path.exists():
                 yaml_path = root_path
             else:
-                 raise FileNotFoundError(f"Configuration file {path} not found.")
+                 raise FileNotFoundError(f"Configuration file {yaml_path} not found.")
 
     with open(yaml_path, 'r') as f:
         data = yaml.safe_load(f)
@@ -94,9 +103,14 @@ def load_agents_config(path: str = "agents.yaml") -> Dict[str, AgentConfig]:
     _cached_config = configs
     return configs
 
-def save_agents_config(configs: Dict[str, AgentConfig], path: str = "agents.yaml"):
+def save_agents_config(configs: Dict[str, AgentConfig], path: str = None):
     global _cached_config
-    yaml_path = Path(path)
+    
+    if path is None:
+        yaml_path = Path(__file__).resolve().parent / "agents.yaml"
+    else:
+        yaml_path = Path(path)
+
     if not yaml_path.exists():
          adjacent_path = Path(__file__).parent / "agents.yaml"
          if adjacent_path.exists():

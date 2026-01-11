@@ -6,7 +6,9 @@ from typing import List, Callable, Dict, Any, Union
 from agno.tools.python import PythonTools
 
 class ToolRegistry:
-    def __init__(self, dynamic_tools_dir: str = "src/tools/dynamic"):
+    def __init__(self, dynamic_tools_dir: str = None):
+        if dynamic_tools_dir is None:
+            dynamic_tools_dir = Path(__file__).resolve().parent / "dynamic"
         self.dynamic_tools_dir = Path(dynamic_tools_dir)
         self.dynamic_tools_dir.mkdir(parents=True, exist_ok=True)
         # Create init if not exists

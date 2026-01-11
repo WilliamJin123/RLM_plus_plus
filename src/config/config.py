@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from dataclasses import dataclass
 from typing import Optional
 from dotenv import load_dotenv
@@ -29,6 +30,7 @@ class LLMConfig:
     OPENROUTER_MODEL_NAME: str = "meta-llama/llama-3.1-70b-instruct"
 
     # Database
-    DB_PATH: str = "data/rlm.db"
+    # Use absolute path based on project root to ensure robustness
+    DB_PATH: str = str(Path(__file__).resolve().parents[2] / "data" / "rlm.db")
 
 config = LLMConfig()

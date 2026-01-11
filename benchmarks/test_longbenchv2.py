@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import List, Dict, Any
 
 # Ensure src is in path if running from root
-sys.path.append(os.getcwd())
+sys.path.append(Path(__file__).resolve().parent.parent.as_posix())
 
 from src.core.indexer import Indexer
 from src.core.factory import AgentFactory
@@ -71,7 +71,7 @@ def evaluate_answer(agent_response: str, correct_answer: str) -> bool:
 
 def run_benchmark(dataset_name: str, limit: int = None):
     # Paths
-    base_dir = Path(os.getcwd())
+    base_dir = Path(__file__).parent.parent
     if dataset_name == "code_qa":
         file_path = base_dir / "datasets" / "longbenchv2" / "code_qa.json"
     elif dataset_name == "history_qa":
