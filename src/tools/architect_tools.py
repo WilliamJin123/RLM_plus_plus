@@ -56,6 +56,10 @@ def update_model_params(agent_id: str, params: Dict[str, Any]) -> str:
             return f"Agent {agent_id} not found."
         
         agent = configs[agent_id]
+        
+        if agent.readonly_model:
+            return f"Modification not allowed: Agent {agent_id} has a read-only model configuration."
+
         agent.model_settings.update(params)
         save_agents_config(configs)
         return f"Updated model settings for {agent_id}."

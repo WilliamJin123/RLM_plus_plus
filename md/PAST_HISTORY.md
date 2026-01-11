@@ -36,3 +36,9 @@ History of Development (V1 & V2)
    * **Tool Registry Update:** Updated `src/tools/registry.py` and `src/tools/file_tools.py` to support the new `analyze_chunk` workflow.
    * **Prompt Alignment:** Updated `src/prompts/agent_prompt.yaml` to instruct the agent to use the new "peeking" mechanism.
    * **Configuration Migration:** Ran `src/utils/migrate_v3.py` to update the persistent agent configuration with the new toolset.
+
+  Refactor 4 (Centralized Configuration & Sub-Agent Isolation)
+  Completed the transition to a fully configuration-driven architecture by centralizing all agent definitions and enforcing read-only protections for sub-agents.
+   * **Centralized Config:** Consolidated `summarization-agent`, `smart-ingest-agent`, `chunk-analyzer-agent`, `history-analyzer-agent`, and `optimizer-agent` definitions into `src/config/agents.yaml`, removing hardcoded instantiations from the codebase.
+   * **Read-Only Protection:** Introduced a `readonly_model: true` flag in the agent configuration to prevent the Architect agent from modifying the models of specialized sub-agents, ensuring stability and cost control.
+   * **Factory Update:** Refactored `AgentFactory` to support ephemeral agents (no storage/history) and updated all core modules (`Indexer`, `SmartIngestor`, `Optimizer`) to use the factory for agent creation.

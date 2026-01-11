@@ -11,22 +11,8 @@ from src.core.smart_ingest import SmartIngestor
 class Indexer:
     def __init__(self, db_path: str = None):
         init_db(db_path)
-        self.model = AgentFactory.create_model()
-        # Summarization agent's own DB (different from RLM content DB)
-        agent_db_path = Path(__file__).resolve().parent.parent / "data" / "sumarization_agent.db"
-        agent_db_path.parent.mkdir(parents=True, exist_ok=True)
-        self.agent = Agent(
-            id="summarization-agent",
-            name="Summarization Agent",
-            model=self.model, 
-            description="You are an expert summarizer.",
-            instructions="Summarize texts concisely, capturing key facts and entities. They must encapsulate the main points clearly, and give enough context for a person to realize when they should read the full text.",
-            db=SqliteDb(
-                db_file=agent_db_path.as_posix(),
-                session_table="summarization_agent_sessions",
-            )
-        )
-        setup_tracing(db=self.agent.db, batch_processing=True)
+        # Summarization agent is now configured in agents.yaml
+        self.agent = AgentFactory.create_agent("summarization-agent")
 
     def summarize_text(self, text: str) -> str:
         prompt = f"Summarize:\n\n{text}"

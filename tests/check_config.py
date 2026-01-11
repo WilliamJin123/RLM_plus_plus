@@ -1,12 +1,13 @@
-from src.core.config_store import SessionLocal, AgentConfig
+from src.config.yaml_config import load_agents_config
 from src.tools.registry import registry
 
 def check_rlm_agent_config():
-    db = SessionLocal()
     try:
-        agent = db.query(AgentConfig).filter_by(agent_id="rlm-agent").first()
+        configs = load_agents_config()
+        agent = configs.get("rlm-agent")
+        
         if not agent:
-            print("Agent 'rlm-agent' NOT FOUND in config DB.")
+            print("Agent 'rlm-agent' NOT FOUND in config YAML.")
             return
 
         print(f"Agent ID: {agent.agent_id}")
@@ -21,8 +22,8 @@ def check_rlm_agent_config():
             print(f"WARNING: The following architect tools are MISSING: {missing_tools}")
             print("Self-editing capabilities are NOT fully active for this agent.")
 
-    finally:
-        db.close()
+    except Exception as e:
+        print(f"Error checking config: {e}")
 
 if __name__ == "__main__":
     check_rlm_agent_config()
