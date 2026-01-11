@@ -52,7 +52,7 @@ class Indexer:
         current_idx = 0
         
         while current_idx < len(full_text):
-            lookahead_chars = target_chunk_tokens * 5 
+            lookahead_chars = (target_chunk_tokens) * 4  # Approximate char count with buffer
             end_candidate = min(current_idx + lookahead_chars, len(full_text))
             
             # The segment we are analyzing (from current position forward)
@@ -112,25 +112,25 @@ class Indexer:
                 "end_index": real_cut_index
             }])
             
-            # 2. Store Level 0 Summary (Simultaneously generated)
+            # 2. Store Level 1 Summary (Simultaneously generated)
             summary_text = decision.get("summary", "No summary available.")
-            l0_id = storage.add_summaries([{
+            l1_id = storage.add_summaries([{
                 "summary_text": summary_text,
-                "level": 0,
+                "level": 1,
                 "chunk_ids": str(chunk_id)
             }])[0]
             
             # Keep track for next level
             class SimpleSummary: pass
             ss = SimpleSummary()
-            ss.id = l0_id
+            ss.id = l1_id
             ss.summary_text = summary_text
-            ss.level = 0
+            ss.level = 1
             
-            # We add to a list that will be used for Level 1
-            if 'level_0_summaries_accumulator' not in locals():
-                level_0_summaries_accumulator = []
-            level_0_summaries_accumulator.append(ss)
+            # We add to a list that will be used for Level 2
+            if 'level_1_summaries_accumulator' not in locals():
+                level_1_summaries_accumulator = []
+            level_1_summaries_accumulator.append(ss)
             
             current_idx = real_next_start
             
@@ -140,11 +140,11 @@ class Indexer:
                 print("Zero length chunk detected. Force advancing.")
                 current_idx += 100 
         
-        print(f"Ingestion Pass Complete. Stored {len(level_0_summaries_accumulator)} chunks and Level 0 summaries.")
+        print(f"Ingestion Pass Complete. Stored {len(level_1_summaries_accumulator)} chunks and Level 1 summaries.")
 
         # 3. Recursive Summarization
-        current_level_summaries = level_0_summaries_accumulator
-        level = 1
+        current_level_summaries = level_1_summaries_accumulator
+        level = 2
         while len(current_level_summaries) > 1:
             next_level_payloads = []
             
