@@ -123,6 +123,10 @@ def test_smart_ingestion_toy_models(mock_get_config, tmp_path):
         assert len(chunks) > 1, "Should have created multiple chunks"
         assert len(summaries) > 0, "Should have created summaries"
         
+        # Verify Levels start at 1
+        min_level = summaries['level'].min()
+        assert min_level == 1, f"Base summary level should be 1, found {min_level}"
+        
         # Verify Smart Ingest Logic
         chunks = chunks.sort_values("start_index").to_dict('records')
         
