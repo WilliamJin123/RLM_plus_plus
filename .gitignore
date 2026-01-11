@@ -9,6 +9,7 @@ __pycache__/
 **/browsecomp_plus/
 **/longbenchv2/data.json
 **/oolong/oolongbench___oolong-synth/
+**/oolong/filtered_oolong_parquet
 
 # C extensions
 *.so
