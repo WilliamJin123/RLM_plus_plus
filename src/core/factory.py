@@ -4,43 +4,52 @@ from agno.agent import Agent
 from agno.db.sqlite import SqliteDb
 from agno.tracing import setup_tracing
 
+from src.config.config import ModelConfig, config
 from src.tools.registry import registry
 
-from src.config.config import config
 import inspect
 
 from keycycle import MultiProviderWrapper
 
-ModelSettings = Dict[str, Any]
-StorageSettings = Dict[str, Any]
 
 class AgentFactory:
-    @staticmethod
-    def create_model(model_settings: Optional[ModelSettings] = None):
-        if model_settings:
-            provider = model_settings.get("provider", config.FAST_MODEL_PROVIDER)
-            model_id = model_settings.get("model_id", config.FAST_MODEL_NAME)
-            temperature = model_settings.get("temperature", 0.0)
-        else:
-            provider = config.FAST_MODEL_PROVIDER
-            model_id = config.FAST_MODEL_NAME
-            temperature = 0.0
+
+    _wrapper_cache: Dict[str, MultiProviderWrapper] = {}
+
+    @classmethod
+    def _get_cached_wrapper(cls, provider: str) -> MultiProviderWrapper:
+        """
+        Retrieves a wrapper from cache or creates a new one if it doesn't exist.
+        """
+
+        if provider not in cls._wrapper_cache:
+            print(f"Initializing new MultiProviderWrapper for {provider}")
+            cls._wrapper_cache[provider] = MultiProviderWrapper.from_env(
+                provider=provider,
+                default_model_id=None, 
+                env_file=Path(__file__).resolve().parents[2] / ".env",
+            )
         
-        wrapper = MultiProviderWrapper.from_env(
-            provider=provider,
-            default_model_id=model_id,
-            env_file=Path(__file__).resolve().parents[2] / ".env",
-            temperature=temperature
+        return cls._wrapper_cache[provider]
+
+
+    @staticmethod
+    def create_model(model_settings: ModelConfig):
+        wrapper = AgentFactory._get_cached_wrapper(
+            provider=model_settings.provider,
         )
-        model = wrapper.get_model()
-                    
-        return model
+
+        # Agno model kwargs        
+        return wrapper.get_model(
+            id=model_settings.model_id,
+            temperature=model_settings.temperature,
+        )
     
     @staticmethod
-    def create_agent(agent_id: str, session_id: str = None, add_history_to_context: bool = None, read_chat_history: bool = None) -> Agent:
-        from src.config.yaml_config import get_agent_config
+    def create_agent(agent_id: str, session_id: str = None) -> Agent:
         
-        config_record = get_agent_config(agent_id)
+        
+        config_record = config.get_agent(agent_id)
         if not config_record:
             raise ValueError(f"No configuration found for agent_id: {agent_id}")
 
@@ -55,54 +64,31 @@ class AgentFactory:
             else:
                 print(f"Warning: Tool '{tool_name}' not found in registry.")
 
-        # Resolve Model
-        model_settings = cast(ModelSettings, config_record.model_settings)
-        model = AgentFactory.create_model(model_settings)
+        model = AgentFactory.create_model(config_record.model_settings)
 
-        # Resolve Storage
-        storage_settings = cast(Optional[StorageSettings], config_record.storage_settings)
+        project_root = Path(__file__).resolve().parent.parent.parent
+        default_db_path = str(project_root / "data" / "history.db")
+
+        storage_settings = config_record.storage_settings
         
-        agent_db = None
-        use_history = False
-        read_history = False
-        num_history = 0
-
         if storage_settings:
-            project_root = Path(__file__).resolve().parent.parent.parent
-            default_db_path = str(project_root / "data" / "history.db")
-            
-            db_path_param = storage_settings.get("db_path")
-            if db_path_param:
-                p = Path(db_path_param)
-                if not p.is_absolute():
-                    db_path = str(project_root / p)
-                else:
-                    db_path = db_path_param
-            else:
-                db_path = default_db_path
+            db_path=storage_settings.db_path
+            session_table=storage_settings.session_table
+            add_history_to_context = storage_settings.add_history_to_context
+            num_history_runs = storage_settings.num_history_runs
+            read_chat_history = storage_settings.read_chat_history
+        else:
+            db_path = default_db_path
+            session_table = "sessions"
+            add_history_to_context = False
+            num_history_runs = 0
+            read_chat_history = False
 
-            session_table = storage_settings.get("session_table", "sessions")
-            
-            # Determine history settings (override > config > default)
-            use_history = add_history_to_context if add_history_to_context is not None else storage_settings.get("add_history_to_context", True)
-            read_history = read_chat_history if read_chat_history is not None else storage_settings.get("read_chat_history", False)
-            num_history = storage_settings.get("num_history_runs", 5)
-
-            if db_path and session_table:
-                # Ensure directory exists
-                Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-                
-                agent_db = SqliteDb(
-                    db_file=db_path,
-                    session_table=session_table
-                )
-        
-        # If manual overrides provided but no storage config, we might want to respect them if possible,
-        # but Agno usually needs a DB for history.
-        if add_history_to_context is not None:
-            use_history = add_history_to_context
-        if read_chat_history is not None:
-            read_history = read_chat_history
+        agent_db = SqliteDb(
+            db_path= project_root / db_path, 
+            session_table=session_table
+        )
+        setup_tracing(db=agent_db, batch_processing=True)
 
         # Create Agent
         agent = Agent(
@@ -112,15 +98,11 @@ class AgentFactory:
             tools=agent_tools,
             instructions=config_record.instructions,
             db=agent_db,
-            add_history_to_context=use_history,
-            num_history_runs=num_history,
-            read_chat_history=read_history,
-            session_id=session_id,
-            markdown=True
+            add_history_to_context=add_history_to_context,
+            num_history_runs=num_history_runs,
+            read_chat_history=read_chat_history,
+            markdown=True,
+            **({"session_id": session_id} if session_id else {})
         )
-
-        # Setup Tracing
-        if agent_db:
-            setup_tracing(db=agent_db, batch_processing=True)
 
         return agent

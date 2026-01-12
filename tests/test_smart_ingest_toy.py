@@ -4,7 +4,7 @@ from pathlib import Path
 from unittest.mock import patch
 from src.core.indexer import Indexer
 from src.core.storage import storage
-from src.config.yaml_config import load_agents_config, AgentConfig
+from src.config.config import load_agents_config, AgentConfig
 
 # Define the models requested
 GROQ_MODEL = "llama-3.1-8b-instant"

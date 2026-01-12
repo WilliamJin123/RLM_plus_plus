@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import MagicMock, patch, ANY
 from src.core.factory import AgentFactory
 from src.config.config import config
-from src.config.yaml_config import load_agents_config
+from src.config.config import load_agents_config
 
 # =================================================================================================
 # UNIT TESTS (MOCKED)
