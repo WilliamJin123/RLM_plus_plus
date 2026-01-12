@@ -36,7 +36,7 @@ rlm-agent:
 summarization-agent:
   instructions:
   - Summarize texts concisely, capturing key facts and entities.
-  - They must encapsulate the main points clearly, and give enough context for a person to realize when they should read the full text.
+  - They must encapsulate the main points clearly, and give enough context for a user to realize when they should read the full text.
   tools: []
   model:
     provider: cerebras
@@ -52,13 +52,9 @@ summarization-agent:
 
 smart-ingest-agent:
   instructions:
-  - Analyze the provided text buffer.
-  - Identify the best semantic stopping point (e.g., end of a paragraph, section, or topic) near the end of the text.
-  - Determine how many lines of overlap are needed for the NEXT chunk to maintain context.
-  - Return your response in strict JSON format: { 'cut_index': int, 'next_chunk_start_index': int, 'reasoning': str }
-  - The 'cut_index' is the character index relative to the start of the text where the current chunk should end.
-  - The 'next_chunk_start_index' is the character index where the next chunk should begin (usually < cut_index to allow overlap).
-  - Do NOT return markdown blocks, just the JSON string.
+  - You are a smart text chunking assistant.
+  - When asked to create summaries, make them concise but informative, capturing enough context that a user can decide if they need to read the full text.
+  - When asked to find cut points, choose locations that preserve meaning and coherence.
   tools: []
   model:
     provider: cerebras

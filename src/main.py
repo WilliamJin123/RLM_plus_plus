@@ -1,55 +1,68 @@
 import argparse
 import sys
-from src.core.indexer import Indexer
+import traceback
 
+# Ensure your python path is set, or run as module
+from src.core.indexer import Indexer
 from src.core.factory import AgentFactory
 
 def main():
     parser = argparse.ArgumentParser(description="RLM++ CLI")
-    subparsers = parser.add_subparsers(dest="command")
+    subparsers = parser.add_subparsers(dest="command", required=True)
 
-    # Ingest
-    ingest_parser = subparsers.add_parser("ingest")
-    ingest_parser.add_argument("file", help="File to ingest")
+    # --- Ingest Command ---
+    ingest_parser = subparsers.add_parser("ingest", help="Ingest a text file into the index")
+    ingest_parser.add_argument("file", help="Path to the file to ingest")
+    # Added DB argument for persistence
+    ingest_parser.add_argument("--db", default="rlm_storage.db", help="Path to SQLite database")
     ingest_parser.add_argument("--strategy", choices=["smart", "basic"], default="smart")
 
-    # Query
-    query_parser = subparsers.add_parser("query")
+    # --- Query Command ---
+    query_parser = subparsers.add_parser("query", help="Ask a question to the RLM Agent")
     query_parser.add_argument("text", help="Query text")
-
+    # Added DB argument so Agent connects to the same DB we ingested into
+    query_parser.add_argument("--db", default="rlm_storage.db", help="Path to SQLite database")
 
     args = parser.parse_args()
 
     if args.command == "ingest":
-        # We keep Indexer as class for now, as it's not fully migrated to Agent config yet
-        indexer = Indexer()
-        indexer.ingest_file(args.file)
+        print(f"Initializing Indexer (DB: {args.db})...")
+        try:
+            # Pass the DB path so data persists
+            indexer = Indexer(db_path=args.db)
+            indexer.ingest_file(args.file)
+        except Exception as e:
+            print(f"Ingestion failed: {e}")
+            traceback.print_exc()
     
     elif args.command == "query":
-        # Use Factory to create RLM Agent
         try:
+            # We assume your AgentFactory/AgentConfig can accept a 'db_path' 
+            # override or that it's configured in agents.yaml. 
+            # If strictly config-based, ensure agents.yaml points to the same DB as above.
+            
+            print(f"Initializing Agent for query: '{args.text}'")
+            
+            # Create the agent
             agent = AgentFactory.create_agent("rlm-agent", session_id="cli_query_session")
             
-            print(f"Starting query: {args.text}")
+            # NOTE: If your agent relies on the 'db' from args, you might need 
+            # to manually inject it here if it's not in agents.yaml.
+            # e.g., agent.storage_engine = StorageEngine(args.db)
             
+            print("--- Agent Running ---")
             response = agent.run(args.text)
             
-            print("\nFinal Answer:")
+            print("\n=== Final Answer ===")
             print(response.content)
+            print("====================")
             
-            # Print metrics if available
-            if hasattr(response, 'metrics'):
+            if hasattr(response, 'metrics') and response.metrics:
                 print(f"\nMetrics: {response.metrics}")
-                
-            print("Query Completed.")
             
         except Exception as e:
             print(f"Error running agent: {e}")
-            import traceback
             traceback.print_exc()
-
-    else:
-        parser.print_help()
 
 if __name__ == "__main__":
     main()
