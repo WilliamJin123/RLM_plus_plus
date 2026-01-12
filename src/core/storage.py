@@ -60,6 +60,14 @@ class StorageEngine:
         conn.close()
         return count
 
+    def get_max_chunk_id(self) -> int:
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT MAX(id) FROM chunks")
+        max_id = cursor.fetchone()[0]
+        conn.close()
+        return max_id if max_id is not None else 0
+
     def add_chunks(self, chunks: List[dict]):
         """
         Bulk add chunks.
