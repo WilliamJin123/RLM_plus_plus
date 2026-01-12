@@ -35,7 +35,7 @@ def ingest_context(indexer: Indexer, context: str):
     
     try:
         # Ingest the file
-        indexer.ingest_file(tmp_path, target_chunk_tokens=40000, group_size=2)
+        indexer.ingest_file(tmp_path, target_chunk_tokens=30000, group_size=2)
     except Exception as e:
         print(f"Error during ingestion: {e}")
     finally:

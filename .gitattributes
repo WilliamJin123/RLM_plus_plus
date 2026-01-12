@@ -1,2 +1,2 @@
 **/code_qa.json filter=lfs diff=lfs merge=lfs -text
-UU/history_qa.json filter=lfs diff=lfs merge=lfs -text
+**/history_qa.json filter=lfs diff=lfs merge=lfs -text
