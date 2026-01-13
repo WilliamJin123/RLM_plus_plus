@@ -8,12 +8,12 @@ from src.core.smart_ingest import SmartIngestor
 from src.utils.token_buffer import TokenBuffer
 
 class Indexer:
-    def __init__(self, db_path: str = None):
+    def __init__(self, db_path: str = None, max_chunk_tokens: int = 4000):
         self.db_path = db_path
         self.storage = StorageEngine(self.db_path)
+        self.max_chunk_tokens = max_chunk_tokens
         self.summarizer = AgentFactory.create_agent("summarization-agent")
-        self.smart_ingestor = SmartIngestor()
-
+        self.smart_ingestor = SmartIngestor(estimated_tokens=max_chunk_tokens)
         self.token_buffer = TokenBuffer(model_name="gpt-4o")
 
     def _summarize_text(self, text: str) -> str:
@@ -21,7 +21,7 @@ class Indexer:
         resp = self.summarizer.run(f"Summarize the following list of document summaries into a single cohesive summary:\n\n{text}")
         return resp.content
 
-    def ingest_file(self, file_path: str, max_chunk_tokens: int = 1000, group_size: int = 5) -> None:
+    def ingest_file(self, file_path: str,group_size: int = 5) -> None:
         """
         Ingests a file into the database using smart chunking and recursive summarization.
         
@@ -35,11 +35,11 @@ class Indexer:
         with path.open('r', encoding='utf-8') as f:
             full_text = f.read()
         
-        level_0_ids = self._process_chunks(full_text, max_chunk_tokens, str(path.name))
+        level_0_ids = self._process_chunks(full_text, str(path.name))
         self._build_hierarchy(level_0_ids, group_size=group_size)
         print("--- Indexing Complete ---")
 
-    def _process_chunks(self, full_text: str, max_chunk_tokens: int, filename: str) -> List[int]:
+    def _process_chunks(self, full_text: str, filename: str) -> List[int]:
         """
         Slices text, stores chunks, stores L0 summaries, and links them.
         Returns a list of the created L0 Summary IDs.
@@ -49,20 +49,22 @@ class Indexer:
         
         # We grab a 'safe' lookahead window of characters that is definitely larger 
         # than the token limit, then let TokenBuffer trim it down precisely.
+        max_chunk_tokens = self.max_chunk_tokens
         char_lookahead = max_chunk_tokens * 5 
 
         while current_idx < len(full_text):
+            
             self.token_buffer.clear()
-
             # Define window
             raw_end = min(current_idx + char_lookahead, len(full_text))
             raw_segment = full_text[current_idx:raw_end]
             self.token_buffer.add_text(raw_segment)
             valid_window_text = self.token_buffer.get_chunk_at(max_chunk_tokens)
-            
+            actual_tokens = self.token_buffer.count_tokens(valid_window_text)
+            print(f"Processing text segment at index {current_idx} ({actual_tokens} tokens), {len(valid_window_text)} characters")
+
             # Analysis
             result = self.smart_ingestor.analyze_segment(valid_window_text)
-            
             # Calculate Absolute Positions
             abs_cut = current_idx + result['cut_index']
             abs_next = current_idx + result['next_chunk_start_index']
@@ -88,7 +90,8 @@ class Indexer:
             self.storage.link_summary_to_chunk(sum_id, chunk_id)
             summary_ids.append(sum_id)
             
-            print(f"Created L0 Node {sum_id} -> Chunk {chunk_id} ({len(chunk_text)} chars)")
+            chunk_tokens = self.token_buffer.count_tokens(chunk_text)
+            print(f"Created L0 Node {sum_id} -> Chunk {chunk_id} ({chunk_tokens} tokens)")
             
             # Move pointer
             if abs_next >= len(full_text):
@@ -112,7 +115,7 @@ class Indexer:
             for i in range(0, len(current_ids), group_size):
                 batch_ids = current_ids[i : i + group_size]
                
-                batch_texts = self.storage.get_chunk_texts(batch_ids)
+                batch_texts = self.storage.get_summaries(batch_ids)
                 combined_text = "\n\n".join(batch_texts)
                 
                 # Generate Higher Level Summary

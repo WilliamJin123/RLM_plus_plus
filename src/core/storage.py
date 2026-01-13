@@ -151,6 +151,20 @@ class StorageEngine:
             cursor.execute(f"SELECT text FROM chunks WHERE id IN ({placeholders})", chunk_ids)
             return [r[0] for r in cursor.fetchall()]
         
+    def get_summary(self, summary_id: int) -> Optional[str]:
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT text FROM summaries WHERE id = ?", (summary_id,))
+            res = cursor.fetchone()
+            return res[0] if res else None
+
+    def get_summaries(self, summary_ids: List[int]) -> List[Optional[str]]:
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            placeholders = ','.join('?' * len(summary_ids))
+            cursor.execute(f"SELECT text FROM summaries WHERE id IN ({placeholders})", summary_ids)
+            return [r[0] for r in cursor.fetchall()]    
+        
     def search_summaries(self, query: str) -> List[Tuple[int, int, str]]:
         """Returns (id, level, text) matches."""
         with self._get_connection() as conn:

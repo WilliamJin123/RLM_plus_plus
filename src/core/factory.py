@@ -32,13 +32,14 @@ class AgentFactory:
 
 
     @staticmethod
-    def create_model(model_settings: ModelConfig):
+    def create_model(model_settings: ModelConfig, estimated_tokens: int = 4000):
         wrapper = AgentFactory._get_cached_wrapper(
             provider=model_settings.provider,
         )
 
         # Agno model kwargs        
         return wrapper.get_model(
+            estimated_tokens=estimated_tokens,
             id=model_settings.model_id,
             temperature=model_settings.temperature,
         )
@@ -73,13 +74,13 @@ class AgentFactory:
         return hydrated_tools
 
     @staticmethod
-    def create_agent(agent_id: str, session_id: str = None, content_db_path: str = None) -> Agent:
+    def create_agent(agent_id: str, session_id: str = None, content_db_path: str = None, estimated_tokens: int = 1000) -> Agent:
         
         config_record = CONFIG.get_agent(agent_id)
         if not config_record:
             raise ValueError(f"No configuration found for agent_id: {agent_id}")
 
-        model = AgentFactory.create_model(config_record.model_settings)
+        model = AgentFactory.create_model(config_record.model_settings, estimated_tokens)
         tools = config_record.tools
 
         project_root = Path(__file__).resolve().parent.parent.parent
@@ -97,7 +98,6 @@ class AgentFactory:
             db_path = default_db_path
             session_table = "sessions"
             add_history_to_context = False
-            num_history_runs = 0
             read_chat_history = False
 
         tools = AgentFactory._hydrate_tools(config_record.tools, content_db_path)
@@ -117,10 +117,10 @@ class AgentFactory:
             instructions=config_record.instructions,
             db=agent_db,
             add_history_to_context=add_history_to_context,
-            num_history_runs=num_history_runs,
             read_chat_history=read_chat_history,
             markdown=True,
-            **({'session_id': session_id} if session_id else {})
+            **({'session_id': session_id} if session_id else {}),
+            **({'num_history_runs': num_history_runs} if num_history_runs else {})
         )
 
         return agent

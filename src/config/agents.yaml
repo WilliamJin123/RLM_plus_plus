@@ -45,8 +45,8 @@ smart-ingest-agent:
   - When asked to find cut points, choose locations that preserve meaning and coherence.
   tools: []
   model:
-    provider: openrouter
-    model_id: google/gemma-3-27b-it:free
+    provider: cerebras
+    model_id: zai-glm-4.6
     temperature: 0.0
   storage: 
     db_path: data/smart_ingest_agent.db
