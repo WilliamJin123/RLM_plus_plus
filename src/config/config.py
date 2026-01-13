@@ -117,4 +117,4 @@ class AgentConfigLoader:
         # Update mtime so we don't reload our own write
         self._last_mtime = self.file_path.stat().st_mtime
 
-config = AgentConfigLoader()
+CONFIG = AgentConfigLoader()

@@ -5,6 +5,7 @@ from typing import List
 from src.core.factory import AgentFactory
 from src.core.storage import StorageEngine
 from src.core.smart_ingest import SmartIngestor
+from src.utils.token_buffer import TokenBuffer
 
 class Indexer:
     def __init__(self, db_path: str = None):
@@ -13,9 +14,10 @@ class Indexer:
         self.summarizer = AgentFactory.create_agent("summarization-agent")
         self.smart_ingestor = SmartIngestor()
 
+        self.token_buffer = TokenBuffer(model_name="gpt-4o")
+
     def _summarize_text(self, text: str) -> str:
         """Helper to summarize text using the configured agent."""
-        # NOTE: prompt should prepend previous summaries for additional context for current summary text
         resp = self.summarizer.run(f"Summarize the following list of document summaries into a single cohesive summary:\n\n{text}")
         return resp.content
 
@@ -47,13 +49,21 @@ class Indexer:
         current_idx = 0
         summary_ids = []
         
+        # We grab a 'safe' lookahead window of characters that is definitely larger 
+        # than the token limit, then let TokenBuffer trim it down precisely.
+        char_lookahead = max_chunk_tokens * 5 
+
         while current_idx < len(full_text):
+            self.token_buffer.clear()
+
             # Define window
-            window_end = min(current_idx + max_chunk_tokens + 500, len(full_text))
-            segment = full_text[current_idx:window_end]
+            raw_end = min(current_idx + char_lookahead, len(full_text))
+            raw_segment = full_text[current_idx:raw_end]
+            self.token_buffer.add_text(raw_segment)
+            valid_window_text = self.token_buffer.get_chunk_at(max_chunk_tokens)
             
             # Analysis
-            result = self.smart_ingestor.analyze_segment(segment)
+            result = self.smart_ingestor.analyze_segment(valid_window_text)
             
             # Calculate Absolute Positions
             abs_cut = current_idx + result['cut_index']
