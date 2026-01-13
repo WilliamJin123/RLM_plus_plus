@@ -1,6 +1,8 @@
 import json
+import re
 from typing import Dict, Any, TypedDict
 from src.core.factory import AgentFactory
+from src.utils.token_buffer import TokenBuffer
 
 class SegmentAnalysisResult(TypedDict):
     cut_index: int
@@ -9,8 +11,9 @@ class SegmentAnalysisResult(TypedDict):
     reasoning: str
 
 class SmartIngestor:
-    def __init__(self):
-        self.agent = AgentFactory.create_agent("smart-ingest-agent")
+    def __init__(self, estimated_tokens: int = 4000):
+        self.agent = AgentFactory.create_agent("smart-ingest-agent", estimated_tokens=estimated_tokens)
+        self.token_buffer = TokenBuffer()
 
     def analyze_segment(self, text: str) -> SegmentAnalysisResult:
         """
@@ -21,31 +24,33 @@ class SmartIngestor:
 
         # Prompt Optimization: Be explicit about the JSON format
         prompt = (
-            f"Analyze this text ({len(text)} chars) to create a document chunk.\n"
+            f"Analyze this{len(text)} character text to create a document chunk.\n"
             f"\n{text}\n"
-            f"\nTasks:\n"
-            f"1. Identify the best stopping point.\n"
+            f"\n<instructions>\n"
+            f"1. Identify the best stopping point near the end of the text.\n"
             f"2. Identify where the NEXT chunk should start (create overlap for context).\n"
             f"3. Summarize the content from the start up to the cut point.\n"
             f"\nReturn STRICT JSON:\n"
             f"{{\n"
-            f"  'cut_index': <int, relative index>,\n"
-            f"  'next_chunk_start_index': <int, relative index < cut_index>,\n"
-            f"  'summary': <string>,\n"
-            f"  'reasoning': <string>\n"
+            f"  \"cut_index\": <int, relative index>,\n"
+            f"  \"next_chunk_start_index\": <int, relative index < cut_index>,\n"
+            f"  \"summary\": <string>,\n"
+            f"  \"reasoning\": <string>\n"
             f"}}"
+            f"</instructions>\n"
         )
         
         try:
             response = self.agent.run(prompt)
             content = response.content
-
+            print(f"SmartIngest Response Content: {content}")
             # Cleanup code blocks if present
             if "```json" in content:
                 content = content.split("```json")[1].split("```")[0].strip()
             elif "```" in content:
                 content = content.split("```")[1].strip()
-            print(f"SmartIngest Response Content: {content}")
+            think_pattern = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
+            content = think_pattern.sub("", content)
             data = json.loads(content.strip())
 
             cut = int(data.get('cut_index', len(text)))
@@ -65,14 +70,14 @@ class SmartIngestor:
             }
             
         except Exception as e:
-            print(f"SmartIngest Error: {e}. Fallback to static overlap.")
             import traceback
             traceback.print_exc()
-            # Fail safe: take the whole segment, overlap 10%
-            l = len(text)
-            return {
-                "cut_index": l,
-                "next_chunk_start_index": int(l * 0.9),
-                "summary": "Automatic fallback summary.",
-                "reasoning": "Error in LLM processing."
-            }
+            # # Fail safe: take the whole segment, overlap 10%
+            # l = len(text)
+            # return {
+            #     "cut_index": l,
+            #     "next_chunk_start_index": int(l * 0.9),
+            #     "summary": "Automatic fallback summary.",
+            #     "reasoning": "Error in LLM processing."
+            # }
+            raise e

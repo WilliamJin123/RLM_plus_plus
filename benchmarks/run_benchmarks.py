@@ -12,6 +12,7 @@ if __name__ == "__main__":
     parser.add_argument("benchmark", choices=["longbench", "oolong"], help="Top level benchmark name")
     parser.add_argument("subset", help="Subset (e.g., 'code_qa', 'history_qa', 'metaphors', 'negation')")
     parser.add_argument("--limit", type=int, default=None, help="Stop after N items")
+    parser.add_argument("--chunk", type=int, default=25000, help="Max chunk size in tokens for ingestion")
     
     args = parser.parse_args()
 
@@ -23,5 +24,5 @@ if __name__ == "__main__":
         from oolong import OolongLogic
         strategy = OolongLogic()
     
-    runner = BenchmarkEngine(args.benchmark, args.subset, strategy)
+    runner = BenchmarkEngine(args.benchmark, args.subset, strategy, max_chunk_tokens=args.chunk)
     runner.run(limit=args.limit)

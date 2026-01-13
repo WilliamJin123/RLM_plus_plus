@@ -39,11 +39,12 @@ class BenchmarkLogic(ABC):
 
 
 class BenchmarkEngine:
-    def __init__(self, name: str, subset: str, strategy: BenchmarkLogic):
+    def __init__(self, name: str, subset: str, strategy: BenchmarkLogic, max_chunk_tokens: int = 50000):
         self.name = name
         self.subset = subset
         self.strategy = strategy
         self.output_file = RESULTS_DIR / f"{name}_{subset}_results.jsonl"
+        self.max_chunk_tokens = max_chunk_tokens
     
     def _ingest_context(self, context: str):
         """Ingests context into a temporary DB."""
@@ -53,15 +54,14 @@ class BenchmarkEngine:
             except PermissionError:
                 print("Warning: Could not remove DB file.")
 
-        indexer = Indexer(db_path = TEMP_DB_PATH)
+        indexer = Indexer(db_path = TEMP_DB_PATH, max_chunk_tokens=self.max_chunk_tokens)
         
         with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt', encoding='utf-8') as tmp:
             tmp.write(context)
             tmp_path = tmp.name
         
         try:
-            # Ensure we use max_chunk_tokens to prevent context window overflow
-            indexer.ingest_file(tmp_path, max_chunk_tokens=40000)
+            indexer.ingest_file(tmp_path)
         finally:
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)

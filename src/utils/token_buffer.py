@@ -34,6 +34,10 @@ class TokenBuffer:
     def text(self) -> str:
         return self.buffer
 
+    def count_tokens(self, text: str) -> int:
+        """Counts tokens in a string using the current encoding."""
+        return len(self.encoding.encode(text))
+
     def get_chunk_at(self, max_tokens: int) -> str:
         """Returns the text that fits within max_tokens."""
         tokens = self.encoding.encode(self.buffer)
