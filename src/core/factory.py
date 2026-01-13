@@ -44,7 +44,7 @@ class AgentFactory:
         )
     
     @staticmethod
-    def _hydrate_tools(tool_names: List[str], db_path: str) -> list:
+    def _hydrate_tools(tool_names: List[str], content_db_path: str = None) -> list:
         """
         Converts a list of string tool names into initialized Toolkit objects.
         """
@@ -62,7 +62,7 @@ class AgentFactory:
             # --- Logic to initialize specific tools ---
             if name == "RLMTools":
                 # RLMTools requires the path to the ingest DB (content)
-                hydrated_tools.append(tool_cls(db_path=db_path))
+                hydrated_tools.append(tool_cls(db_path=content_db_path))
             elif name == "PythonTools":
                 # PythonTools usually requires no args, or specific permissions
                 hydrated_tools.append(tool_cls())
@@ -73,7 +73,7 @@ class AgentFactory:
         return hydrated_tools
 
     @staticmethod
-    def create_agent(agent_id: str) -> Agent:
+    def create_agent(agent_id: str, session_id: str = None, content_db_path: str = None) -> Agent:
         
         config_record = CONFIG.get_agent(agent_id)
         if not config_record:
@@ -83,7 +83,7 @@ class AgentFactory:
         tools = config_record.tools
 
         project_root = Path(__file__).resolve().parent.parent.parent
-        default_db_path = str(project_root / "data" / "history.db")
+        default_db_path = "data/history.db"
 
         storage_settings = config_record.storage_settings
         
@@ -100,10 +100,10 @@ class AgentFactory:
             num_history_runs = 0
             read_chat_history = False
 
-        tools = AgentFactory._hydrate_tools(config_record.tools, db_path)
+        tools = AgentFactory._hydrate_tools(config_record.tools, content_db_path)
 
         agent_db = SqliteDb(
-            db_path= project_root / db_path, 
+            db_file=str(project_root / db_path),
             session_table=session_table
         )
         setup_tracing(db=agent_db, batch_processing=True)
@@ -120,6 +120,7 @@ class AgentFactory:
             num_history_runs=num_history_runs,
             read_chat_history=read_chat_history,
             markdown=True,
+            **({'session_id': session_id} if session_id else {})
         )
 
         return agent

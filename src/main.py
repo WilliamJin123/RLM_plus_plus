@@ -1,6 +1,11 @@
 import argparse
 import sys
 import traceback
+from pathlib import Path
+
+# Ensure root is in path
+BASE_DIR = Path(__file__).resolve().parent.parent
+sys.path.append(BASE_DIR.as_posix())
 
 # Ensure your python path is set, or run as module
 from src.core.indexer import Indexer
