@@ -3,10 +3,12 @@ import time
 import sys
 from pathlib import Path
 
-sys.path.append(Path(__file__).resolve().parent.as_posix())
+# Ensure src is in path if running from root
+sys.path.append(Path(__file__).resolve().parent.parent.as_posix())
 
 from src.core.indexer import Indexer
 from src.core.factory import AgentFactory
+from src.tools.rlm_tools import RLMTools
 
 def generate_browsecomp_data(file_path: str):
     content = """
@@ -66,10 +68,21 @@ def run_test():
     
     indexer = Indexer(db_path)
     # Use Large Scale settings (mocking a large file scenario)
-    indexer.ingest_file(data_file, target_chunk_tokens=25000, group_size=2)
+    # Changed target_chunk_tokens to max_chunk_tokens to match current implementation
+    indexer.ingest_file(data_file, max_chunk_tokens=25000, group_size=2)
     
     print("--- Starting Agent Search ---")
-    agent = AgentFactory.create_agent("rlm-agent", session_id="test_browsecomp", add_history_to_context=False, read_chat_history=False)
+    # Updated: removed session_id and history args from create_agent as they are not supported in factory.py
+    agent = AgentFactory.create_agent("rlm-agent")
+    
+    # Manually override tools to use the benchmark DB
+    # Filter out existing RLMTools and add new one pointing to our DB
+    new_tools = [t for t in agent.tools if not isinstance(t, RLMTools)]
+    new_tools.append(RLMTools(db_path=db_path))
+    agent.tools = new_tools
+    
+    # Set session ID explicitly on the agent instance
+    agent.session_id = "test_browsecomp"
     
     query = "Which phone has the best camera rating for under $800?"
     print(f"Query: {query}")

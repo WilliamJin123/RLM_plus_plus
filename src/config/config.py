@@ -40,7 +40,6 @@ class AgentConfig:
     tools: List[str]
     model_settings: ModelConfig
     storage_settings: StorageConfig
-    readonly_model: bool = False
 
 class AgentConfigLoader:
     def __init__(self, config_path: Optional[str] = None):
@@ -79,7 +78,6 @@ class AgentConfigLoader:
                 tools=agent_data.get("tools", []),
                 model_settings=model_data,
                 storage_settings=storage_data,
-                readonly_model=agent_data.get("readonly_model", False)
             )
         
         self._config_cache = configs
@@ -106,7 +104,6 @@ class AgentConfigLoader:
                 "instructions": config.instructions,
                 "tools": config.tools,
                 "model": config.model_settings.to_dict(),
-                "readonly_model": config.readonly_model,
                 "storage": config.storage_settings.to_dict()
             }
             data[agent_id] = agent_dict

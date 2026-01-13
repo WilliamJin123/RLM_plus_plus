@@ -14,6 +14,7 @@ sys.path.append(BASE_DIR.as_posix())
 
 from src.core.indexer import Indexer
 from src.core.factory import AgentFactory
+from src.tools.rlm_tools import RLMTools
 
 def load_oolong_dataset(subset: str = "metaphors", limit: int = None) -> List[Dict[str, Any]]:
     print(f"Loading Oolong dataset ({subset})...")
@@ -54,7 +55,8 @@ def ingest_context(indexer: Indexer, context: str):
     try:
         # Ingest the file
         # target_chunk_tokens=25000 is used in longbenchv2, keeping it similar
-        indexer.ingest_file(tmp_path, target_chunk_tokens=40000, group_size=2)
+        # Updated to max_chunk_tokens
+        indexer.ingest_file(tmp_path, max_chunk_tokens=40000)
     except Exception as e:
         print(f"Error during ingestion: {e}")
     finally:
@@ -129,12 +131,15 @@ def run_benchmark(subset: str, limit: int = None):
         # 4. Prepare Agent
         session_id = f"bench_oolong_{subset}_{total_count}"
         try:
-            agent = AgentFactory.create_agent(
-                "rlm-agent", 
-                session_id=session_id, 
-                add_history_to_context=False, 
-                read_chat_history=False
-            )
+            agent = AgentFactory.create_agent("rlm-agent")
+            
+            # Manually override tools to use the benchmark DB
+            new_tools = [t for t in agent.tools if not isinstance(t, RLMTools)]
+            new_tools.append(RLMTools(db_path=db_path))
+            agent.tools = new_tools
+            
+            agent.session_id = session_id
+
         except Exception as e:
             print(f"Error creating agent: {e}")
             continue

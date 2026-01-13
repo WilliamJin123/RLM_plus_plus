@@ -9,8 +9,6 @@ rlm-agent:
   - 4. Use 'search_summaries' if you are looking for specific keywords.
   - 5. Use 'PythonTools' if you need to perform calculations, loop through data, or
     verify facts across multiple chunks.
-  - DO NOT guess or hallucinate content. If the information is not in the document,
-    say so.
   - Be systematic and efficient. Use your tools to minimize the amount of raw text
     you read.
   tools:
@@ -24,9 +22,8 @@ rlm-agent:
     db_path: data/rlm_agent.db
     session_table: rlm_agent_sessions
     add_history_to_context: false
-    num_history_runs: 5
+    num_history_runs: 0
     read_chat_history: false
-  readonly_model: false
 
 summarization-agent:
   instructions:
@@ -39,11 +36,7 @@ summarization-agent:
     temperature: 0.0
   storage:
     db_path: data/sumarization_agent.db
-    session_table: llama-3.3-70b
-    add_history_to_context: false
-    num_history_runs: 0
-    read_chat_history: false
-  readonly_model: true
+    session_table: summarization_sessions
 
 smart-ingest-agent:
   instructions:
@@ -55,8 +48,9 @@ smart-ingest-agent:
     provider: cerebras
     model_id: llama-3.3-70b
     temperature: 0.0
-  storage: data/smart_ingest_agent.db
-  readonly_model: true
+  storage: 
+    db_path: data/smart_ingest_agent.db
+    session_table: ingest_sessions
 
 chunk-analyzer-agent:
   instructions:
@@ -68,5 +62,6 @@ chunk-analyzer-agent:
     provider: cerebras
     model_id: qwen-3-235b-a22b-instruct-2507
     temperature: 0.0
-  storage: data/chunk_analyzer_agent.db
-  readonly_model: true
+  storage: 
+    db_path: data/chunk_analyzer_agent.db
+    session_table: chunk_analysis_sessions
