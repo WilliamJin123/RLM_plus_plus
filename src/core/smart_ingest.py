@@ -1,13 +1,18 @@
 import json
-from typing import Dict, Any
-from agno.agent import Agent
+from typing import Dict, Any, TypedDict
 from src.core.factory import AgentFactory
+
+class SegmentAnalysisResult(TypedDict):
+    cut_index: int
+    next_chunk_start_index: int
+    summary: str
+    reasoning: str
 
 class SmartIngestor:
     def __init__(self):
         self.agent = AgentFactory.create_agent("smart-ingest-agent")
 
-    def analyze_segment(self, text: str) -> Dict[str, Any]:
+    def analyze_segment(self, text: str) -> SegmentAnalysisResult:
         """
         Analyzes a text segment to find the semantic cut point and generate a summary.
         Returns indices RELATIVE to the start of the provided string.

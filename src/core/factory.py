@@ -1,13 +1,11 @@
 from pathlib import Path
-from typing import Optional, Dict, Any, cast
+from typing import List, Optional, Dict, Any, cast
 from agno.agent import Agent
 from agno.db.sqlite import SqliteDb
 from agno.tracing import setup_tracing
 
-from src.config.config import ModelConfig, config
-from src.tools.registry import registry
-
-import inspect
+from src.config.config import ModelConfig, CONFIG
+from src.tools.rlm_tools import TOOL_REGISTRY
 
 from keycycle import MultiProviderWrapper
 
@@ -46,25 +44,43 @@ class AgentFactory:
         )
     
     @staticmethod
-    def create_agent(agent_id: str, session_id: str = None) -> Agent:
+    def _hydrate_tools(tool_names: List[str], db_path: str) -> list:
+        """
+        Converts a list of string tool names into initialized Toolkit objects.
+        """
+        hydrated_tools = []
         
+        if not tool_names:
+            return hydrated_tools
+
+        for name in tool_names:
+            tool_cls = TOOL_REGISTRY.get(name)
+            if not tool_cls:
+                print(f"Warning: Tool '{name}' not found in registry. Skipping.")
+                continue
+
+            # --- Logic to initialize specific tools ---
+            if name == "RLMTools":
+                # RLMTools requires the path to the ingest DB (content)
+                hydrated_tools.append(tool_cls(db_path=db_path))
+            elif name == "PythonTools":
+                # PythonTools usually requires no args, or specific permissions
+                hydrated_tools.append(tool_cls())
+            else:
+                # Generic fallback for tools with no args
+                hydrated_tools.append(tool_cls())
         
-        config_record = config.get_agent(agent_id)
+        return hydrated_tools
+
+    @staticmethod
+    def create_agent(agent_id: str) -> Agent:
+        
+        config_record = CONFIG.get_agent(agent_id)
         if not config_record:
             raise ValueError(f"No configuration found for agent_id: {agent_id}")
 
-        # Resolve Tools
-        tool_map = registry.get_tool_map()
-        agent_tools = []
-        tool_names = cast(list, config_record.tools)
-        for tool_name in tool_names:
-            if tool_name in tool_map:
-                tool_obj = tool_map[tool_name]
-                agent_tools.append(tool_obj)
-            else:
-                print(f"Warning: Tool '{tool_name}' not found in registry.")
-
         model = AgentFactory.create_model(config_record.model_settings)
+        tools = config_record.tools
 
         project_root = Path(__file__).resolve().parent.parent.parent
         default_db_path = str(project_root / "data" / "history.db")
@@ -84,6 +100,8 @@ class AgentFactory:
             num_history_runs = 0
             read_chat_history = False
 
+        tools = AgentFactory._hydrate_tools(config_record.tools, db_path)
+
         agent_db = SqliteDb(
             db_path= project_root / db_path, 
             session_table=session_table
@@ -95,14 +113,13 @@ class AgentFactory:
             id=agent_id,
             name=agent_id.replace("-", " ").title(),
             model=model,
-            tools=agent_tools,
+            tools=tools,
             instructions=config_record.instructions,
             db=agent_db,
             add_history_to_context=add_history_to_context,
             num_history_runs=num_history_runs,
             read_chat_history=read_chat_history,
             markdown=True,
-            **({"session_id": session_id} if session_id else {})
         )
 
         return agent

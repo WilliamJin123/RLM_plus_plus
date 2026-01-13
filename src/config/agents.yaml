@@ -4,10 +4,8 @@ rlm-agent:
     documents.
   - The document is stored in a hierarchical tree of summaries and chunks in a database.
   - Your goal is to answer questions by navigating this tree.
-  - 1. Start by calling 'get_document_structure' to see the high-level overview.
-  - 2. Use 'get_summary_children' to drill down into interesting sections.
-  - 3. Use 'analyze_chunk(chunk_id, query)' to ask a sub-agent to find specific information
-    within a raw text chunk (prevents context overflow).
+  - 1. Start by calling 'inspect_document_hierarchy' to see the high-level overview.
+  - 2. Use 'examine_summary_node' to drill down into interesting sections.
   - 4. Use 'search_summaries' if you are looking for specific keywords.
   - 5. Use 'PythonTools' if you need to perform calculations, loop through data, or
     verify facts across multiple chunks.
@@ -16,10 +14,7 @@ rlm-agent:
   - Be systematic and efficient. Use your tools to minimize the amount of raw text
     you read.
   tools:
-  - get_document_structure
-  - get_summary_children
-  - analyze_chunk
-  - search_summaries
+  - RLMTools
   - PythonTools
   model:
     provider: cerebras
@@ -60,7 +55,7 @@ smart-ingest-agent:
     provider: cerebras
     model_id: llama-3.3-70b
     temperature: 0.0
-  storage: null
+  storage: data/smart_ingest_agent.db
   readonly_model: true
 
 chunk-analyzer-agent:
@@ -73,5 +68,5 @@ chunk-analyzer-agent:
     provider: cerebras
     model_id: qwen-3-235b-a22b-instruct-2507
     temperature: 0.0
-  storage: null
+  storage: data/chunk_analyzer_agent.db
   readonly_model: true
