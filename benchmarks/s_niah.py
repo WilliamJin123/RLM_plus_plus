@@ -6,10 +6,11 @@ import time
 import sys
 from pathlib import Path
 
-sys.path.append(Path(__file__).resolve().parent.as_posix())
+sys.path.append(Path(__file__).resolve().parent.parent.as_posix())
 
 from src.core.indexer import Indexer
 from src.core.factory import AgentFactory
+from src.tools.rlm_tools import RLMTools
 
 def generate_haystack(file_path: str, size_in_tokens: int = 100000):
     """
@@ -61,12 +62,21 @@ def run_test():
     indexer = Indexer(db_path)
     
     # Use Large Scale settings: 50k tokens per chunk, group 2 chunks for summary (100k context)
-    indexer.ingest_file(haystack_file, target_chunk_tokens=25000, group_size=2)
+    # Changed target_chunk_tokens to max_chunk_tokens
+    indexer.ingest_file(haystack_file, max_chunk_tokens=25000, group_size=2)
     print(f"Indexing took {time.time() - start_time:.2f}s")
     
     print("--- Starting Agent Search ---")
-    # Use factory to create agent with NO HISTORY
-    agent = AgentFactory.create_agent("rlm-agent", session_id="test_niah", add_history_to_context=False, read_chat_history=False)
+    # Use factory to create agent
+    agent = AgentFactory.create_agent("rlm-agent")
+    
+    # Manually override tools to use the benchmark DB
+    new_tools = [t for t in agent.tools if not isinstance(t, RLMTools)]
+    new_tools.append(RLMTools(db_path=db_path))
+    agent.tools = new_tools
+    
+    agent.session_id = "test_niah"
+    
     response = agent.run("Find the 'secret code' mentioned in the document and return it.")
     
     print("\nAgent Response:")

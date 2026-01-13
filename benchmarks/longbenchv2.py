@@ -13,7 +13,7 @@ sys.path.append(BASE_DIR.as_posix())
 
 from src.core.indexer import Indexer
 from src.core.factory import AgentFactory
-# from src.core.overseer import overseer # Overseer was deleted previously
+from src.tools.rlm_tools import RLMTools
 
 def load_dataset(dataset_path: str) -> List[Dict[str, Any]]:
     print(f"Loading dataset from {dataset_path}...")
@@ -35,7 +35,8 @@ def ingest_context(indexer: Indexer, context: str):
     
     try:
         # Ingest the file
-        indexer.ingest_file(tmp_path, target_chunk_tokens=30000, group_size=2)
+        # Changed target_chunk_tokens to max_chunk_tokens
+        indexer.ingest_file(tmp_path, max_chunk_tokens=40000)
     except Exception as e:
         print(f"Error during ingestion: {e}")
     finally:
@@ -53,8 +54,6 @@ def evaluate_answer(agent_response: str, correct_answer: str) -> bool:
         # Fallback: check if the response is just a single letter or surrounded by non-word chars
         # e.g. "The answer is B." -> match B
         # But be careful of false positives.
-        # Let's try finding the last occurrence of a single letter A-D?
-        # Or look for "Option B", "Choice C"
         match = re.search(r"(?:OPTION|CHOICE)\s*([A-D])", resp)
         if match:
             prediction = match.group(1)
@@ -118,12 +117,15 @@ def run_benchmark(dataset_name: str, limit: int = None):
         # Use a unique session ID
         session_id = f"bench_{dataset_name}_{total_count}"
         try:
-            agent = AgentFactory.create_agent(
-                "rlm-agent", 
-                session_id=session_id, 
-                add_history_to_context=False, 
-                read_chat_history=False
-            )
+            agent = AgentFactory.create_agent("rlm-agent")
+            
+            # Manually override tools to use the benchmark DB
+            new_tools = [t for t in agent.tools if not isinstance(t, RLMTools)]
+            new_tools.append(RLMTools(db_path=db_path))
+            agent.tools = new_tools
+            
+            agent.session_id = session_id
+            
         except Exception as e:
             print(f"Error creating agent: {e}")
             continue
