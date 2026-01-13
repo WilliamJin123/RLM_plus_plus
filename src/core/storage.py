@@ -4,11 +4,17 @@ from pathlib import Path
 
 class StorageEngine:
     def __init__(self, db_path: str = None):
-        if db_path is None:
-            project_root = Path(__file__).resolve().parent.parent.parent
-            db_path = str(project_root / "data" / "rlm_storage.db")
+        project_root = Path(__file__).resolve().parent.parent.parent
         
-        self.db_path = db_path
+        if db_path is None:
+            self.db_path = str(project_root / "data" / "rlm_storage.db")
+        else:
+            # If a path is provided, ensure it's handled correctly relative to root if it's not absolute
+            # However, for this project's convention, we anchor it to project_root if it looks like a filename
+            # or keep it if the user provided a full path.
+            # Simple approach matching previous intent: force anchor to project root for consistency
+            self.db_path = str(project_root / db_path)
+            
         # Ensure parent directory exists
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
         self._init_tables()

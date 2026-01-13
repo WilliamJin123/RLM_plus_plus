@@ -45,7 +45,7 @@ class SmartIngestor:
                 content = content.split("```json")[1].split("```")[0].strip()
             elif "```" in content:
                 content = content.split("```")[1].strip()
-            
+            print(f"SmartIngest Response Content: {content}")
             data = json.loads(content.strip())
 
             cut = int(data.get('cut_index', len(text)))

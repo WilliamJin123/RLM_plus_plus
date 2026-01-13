@@ -27,10 +27,8 @@ class Indexer:
         
         Args:
             file_path: Path to the file to be indexed.
-            target_chunk_tokens: The approximate number of tokens desired per chunk. 
-                               The SmartIngestor will find the best semantic cut point near this target.
-            group_size: How many chunks (or lower-level summaries) to group together when 
-                        creating the next level of the summary hierarchy. Defaults to 2 (i.e., binary tree).
+            target_chunk_tokens: The approximate number of tokens desired per chunk. The SmartIngestor will find the best semantic cut point near this target.
+            group_size: How many chunks (or lower-level summaries) to group together when creating the next level of the summary hierarchy. Defaults to 2 (i.e., binary tree).
         """
         print(f"--- Indexing {file_path} ---")
         path = Path(file_path)
