@@ -12,6 +12,7 @@ sys.path.insert(0, str(BASE_DIR))
 
 from src.core.factory import AgentFactory
 from src.core.indexer import Indexer
+from src.core.validator import DatabaseValidator
 
 logger = logging.getLogger(__name__)
 
@@ -166,9 +167,24 @@ class BenchmarkEngine:
                 logger.warning("Skipping empty context for item %d", i)
                 continue
 
-            # Ingest context if DB doesn't exist
+            # Validate and repair existing DB, or ingest new one
             if item_db_path.exists():
-                logger.info("Found existing DB at %s, skipping ingestion.", item_db_path)
+                logger.info("Found existing DB at %s, validating...", item_db_path)
+                validator = DatabaseValidator(str(item_db_path))
+                issues = validator.validate()
+                total_issues = sum(len(v) for v in issues.values())
+
+                if total_issues > 0:
+                    logger.info("Found %d issues, repairing...", total_issues)
+                    stats = validator.repair(dry_run=False)
+                    logger.info(
+                        "Repair complete: cleaned=%d, regenerated=%d, failed=%d",
+                        stats["cleaned"],
+                        stats["regenerated"],
+                        stats["failed"],
+                    )
+                else:
+                    logger.info("Database validation passed.")
             else:
                 logger.info("Ingesting %d chars...", len(context))
                 self._ingest_context(context, item_db_path)
