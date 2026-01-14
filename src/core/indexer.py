@@ -8,7 +8,8 @@ from typing import List, Optional
 from src.chunking.base import BaseChunker
 from src.chunking.fixed import FixedTokenChunker
 from src.chunking.llm import SemanticBoundaryChunker
-from src.core.factory import AgentFactory
+from src.config.config import CONFIG
+from src.core.factory import AgentFactory, ModelRotator
 from src.core.storage import StorageEngine
 from src.utils.token_buffer import TokenBuffer
 
@@ -46,14 +47,39 @@ class Indexer:
         else:
             self.chunker = FixedTokenChunker(max_chunk_tokens, self.token_buffer)
 
+        # Create model rotator for summarization agent if configured
+        summary_config = CONFIG.get_agent("summarization-agent")
+        if summary_config and summary_config.model_pool:
+            self.summary_rotator: Optional[ModelRotator] = ModelRotator(
+                configs=summary_config.model_pool.models,
+                calls_per_model=summary_config.model_pool.calls_per_model,
+            )
+            logger.info(
+                "Initialized ModelRotator for summarization with %d models",
+                len(self.summary_rotator),
+            )
+        else:
+            self.summary_rotator = None
+
     def _get_summary_from_llm(self, prompt: str) -> str:
         """Thread-safe wrapper to checkout a key, run the agent, and return the key."""
         key_index = self.key_queue.get()
 
         try:
             agent = AgentFactory.create_agent("summarization-agent", key_index=key_index)
+
+            # Rotate model if configured
+            if self.summary_rotator:
+                model_config = self.summary_rotator.get_next_config()
+                agent.model = AgentFactory.create_model(model_config)
+                logger.debug(
+                    "Using model: %s/%s", model_config.provider, model_config.model_id
+                )
+
             response = agent.run(prompt)
-            return response.content
+
+            cleaned_content = response.content.replace("###", "")
+            return cleaned_content
         except Exception as e:
             logger.error("Error in LLM thread: %s", e)
             return "Error generating summary."

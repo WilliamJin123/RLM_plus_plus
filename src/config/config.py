@@ -20,6 +20,20 @@ class ModelConfig:
 
 
 @dataclass
+class ModelPoolConfig:
+    """Configuration for model rotation (multiple models)."""
+
+    models: List[ModelConfig]
+    calls_per_model: int = 3
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "models": [m.to_dict() for m in self.models],
+            "calls_per_model": self.calls_per_model,
+        }
+
+
+@dataclass
 class StorageConfig:
     db_path: str
     session_table: str
@@ -42,8 +56,13 @@ class AgentConfig:
     agent_id: str
     instructions: List[str]
     tools: List[str]
-    model_settings: ModelConfig
+    model_settings: Optional[ModelConfig]
     storage_settings: Optional[StorageConfig]
+    model_pool: Optional[ModelPoolConfig] = None
+
+    def has_model_rotation(self) -> bool:
+        """Check if this agent uses model rotation."""
+        return self.model_pool is not None
 
 
 class AgentConfigLoader:
@@ -72,7 +91,28 @@ class AgentConfigLoader:
 
         configs: Dict[str, AgentConfig] = {}
         for agent_id, agent_data in data.items():
-            model_data = ModelConfig(**agent_data["model"])
+            # Parse single model OR model pool (rotation)
+            model_data: Optional[ModelConfig] = None
+            model_pool: Optional[ModelPoolConfig] = None
+
+            if "models" in agent_data:
+                # Model rotation config
+                temperature = agent_data.get("temperature", 0.0)
+                models_list = [
+                    ModelConfig(
+                        provider=m["provider"],
+                        model_id=m["model_id"],
+                        temperature=temperature,
+                    )
+                    for m in agent_data["models"]
+                ]
+                model_pool = ModelPoolConfig(
+                    models=models_list,
+                    calls_per_model=agent_data.get("calls_per_model", 3),
+                )
+            elif "model" in agent_data:
+                # Single model config
+                model_data = ModelConfig(**agent_data["model"])
 
             storage_data = None
             storage_dict = agent_data.get("storage")
@@ -85,6 +125,7 @@ class AgentConfigLoader:
                 tools=agent_data.get("tools", []),
                 model_settings=model_data,
                 storage_settings=storage_data,
+                model_pool=model_pool,
             )
 
         self._config_cache = configs
@@ -109,8 +150,17 @@ class AgentConfigLoader:
             agent_dict: Dict[str, Any] = {
                 "instructions": config.instructions,
                 "tools": config.tools,
-                "model": config.model_settings.to_dict(),
             }
+            if config.model_pool:
+                # Save model rotation config
+                agent_dict["models"] = [
+                    {"provider": m.provider, "model_id": m.model_id}
+                    for m in config.model_pool.models
+                ]
+                agent_dict["temperature"] = config.model_pool.models[0].temperature
+                agent_dict["calls_per_model"] = config.model_pool.calls_per_model
+            elif config.model_settings:
+                agent_dict["model"] = config.model_settings.to_dict()
             if config.storage_settings:
                 agent_dict["storage"] = config.storage_settings.to_dict()
             data[agent_id] = agent_dict
