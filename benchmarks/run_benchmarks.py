@@ -42,6 +42,12 @@ def main() -> None:
         help="Stop after N items",
     )
     parser.add_argument(
+        "--questions",
+        type=str,
+        default=None,
+        help="Comma-separated list of 1-based question indices to run (e.g., '5' or '1,3,5')",
+    )
+    parser.add_argument(
         "--chunk",
         type=int,
         default=25000,
@@ -88,8 +94,13 @@ def main() -> None:
         db_output_dir=args.db_dir,
     )
 
+    # Parse questions into list of 0-based indices
+    questions = None
+    if args.questions:
+        questions = [int(q.strip()) - 1 for q in args.questions.split(",")]
+
     try:
-        runner.run(limit=args.limit)
+        runner.run(limit=args.limit, questions=questions)
     except KeyboardInterrupt:
         logger.info("Benchmark interrupted by user")
         sys.exit(0)

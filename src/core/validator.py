@@ -44,36 +44,63 @@ class DatabaseValidator:
         """
         return self.storage.get_broken_summaries()
 
-    def repair(self, dry_run: bool = False) -> Dict[str, int]:
+    def repair(
+        self,
+        dry_run: bool = False,
+        issues: Optional[Dict[str, List[Tuple[int, str]]]] = None,
+    ) -> Dict[str, int]:
         """
         Repairs all broken summaries.
 
         Args:
             dry_run: If True, only report what would be fixed without making changes.
+            issues: Pre-validated issues dict. If None, validate() will be called.
 
         Returns:
             Dict with counts: {'cleaned': int, 'regenerated': int, 'failed': int}
         """
-        broken = self.validate()
+        if issues is None:
+            issues = self.validate()
+
         stats = {"cleaned": 0, "regenerated": 0, "failed": 0}
 
+        logger.info("=== DB REPAIR START ===")
+
         # Phase 1: Clean fixable summaries (think blocks, markdown prefix)
-        cleanable = broken["think_blocks"] + broken["markdown_prefix"]
-        for summary_id, text in cleanable:
-            cleaned = clean_summary_text(text)
-            if cleaned and cleaned != text:
-                if not dry_run:
-                    self.storage.update_summary_text(summary_id, cleaned)
-                stats["cleaned"] += 1
-                logger.info("Cleaned summary %d", summary_id)
+        cleanable = issues["think_blocks"] + issues["markdown_prefix"]
+        if cleanable:
+            logger.info(
+                "Phase 1: Cleaning %d think_blocks, %d markdown_prefix issues...",
+                len(issues["think_blocks"]),
+                len(issues["markdown_prefix"]),
+            )
+            for summary_id, text in cleanable:
+                cleaned = clean_summary_text(text)
+                if cleaned and cleaned != text:
+                    if not dry_run:
+                        self.storage.update_summary_text(summary_id, cleaned)
+                    stats["cleaned"] += 1
+                    logger.debug("Cleaned summary %d", summary_id)
+            logger.info("Phase 1 complete: %d summaries cleaned", stats["cleaned"])
 
         # Phase 2: Regenerate provider errors (requires LLM calls)
-        if broken["provider_error"]:
+        if issues["provider_error"]:
+            logger.info(
+                "Phase 2: Regenerating %d provider_error summaries via LLM...",
+                len(issues["provider_error"]),
+            )
             regenerate_results = self._regenerate_summaries_parallel(
-                [sid for sid, _ in broken["provider_error"]], dry_run=dry_run
+                [sid for sid, _ in issues["provider_error"]], dry_run=dry_run
             )
             stats["regenerated"] = regenerate_results["success"]
             stats["failed"] = regenerate_results["failed"]
+            logger.info(
+                "Phase 2 complete: %d regenerated, %d failed",
+                stats["regenerated"],
+                stats["failed"],
+            )
+
+        logger.info("=== DB REPAIR COMPLETE ===")
 
         return stats
 
@@ -100,7 +127,7 @@ class DatabaseValidator:
 
         # Process level 0 summaries (from chunk text)
         if level_0_items:
-            logger.info("Regenerating %d level-0 summaries...", len(level_0_items))
+            logger.debug("Regenerating %d level-0 summaries...", len(level_0_items))
             with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
                 futures = []
                 for sid, context in level_0_items:
@@ -117,7 +144,7 @@ class DatabaseValidator:
                         if new_text and "Error" not in new_text:
                             self.storage.update_summary_text(sid, new_text)
                             results["success"] += 1
-                            logger.info("Regenerated summary %d", sid)
+                            logger.debug("Regenerated summary %d", sid)
                         else:
                             results["failed"] += 1
                             logger.warning("Failed to regenerate summary %d: %s", sid, new_text)
@@ -127,7 +154,7 @@ class DatabaseValidator:
 
         # Process higher level summaries (from child texts)
         if higher_level_items:
-            logger.info("Regenerating %d higher-level summaries...", len(higher_level_items))
+            logger.debug("Regenerating %d higher-level summaries...", len(higher_level_items))
             with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
                 futures = []
                 for sid, context in higher_level_items:
@@ -145,7 +172,7 @@ class DatabaseValidator:
                         if new_text and "Error" not in new_text:
                             self.storage.update_summary_text(sid, new_text)
                             results["success"] += 1
-                            logger.info("Regenerated summary %d", sid)
+                            logger.debug("Regenerated summary %d", sid)
                         else:
                             results["failed"] += 1
                             logger.warning("Failed to regenerate summary %d: %s", sid, new_text)
@@ -155,22 +182,43 @@ class DatabaseValidator:
 
         return results
 
-    def _get_summary_from_llm(self, prompt: str) -> str:
-        """Thread-safe LLM call (same pattern as Indexer)."""
+    def _get_summary_from_llm(self, prompt: str, max_retries: int = 3) -> str:
+        """Thread-safe LLM call with retry and force rotation on failure."""
         key_index = self.key_queue.get()
 
         try:
             agent = AgentFactory.create_agent("summarization-agent", key_index=key_index)
 
-            if self.summary_rotator:
-                model_config = self.summary_rotator.get_next_config()
-                agent.model = AgentFactory.create_model(model_config)
+            for attempt in range(max_retries):
+                try:
+                    if self.summary_rotator:
+                        model_config = self.summary_rotator.get_next_config()
+                        agent.model = AgentFactory.create_model(model_config)
 
-            response = agent.run(prompt)
-            cleaned = response.content.replace("###", "")
-            return clean_summary_text(cleaned)  # Apply cleaning to new summaries too
-        except Exception as e:
-            logger.error("Error in LLM thread: %s", e)
+                    response = agent.run(prompt)
+                    content = response.content
+
+                    # Check for provider error in response
+                    if "Provider returned error" in content:
+                        logger.warning(
+                            "Provider error on attempt %d/%d", attempt + 1, max_retries
+                        )
+                        if self.summary_rotator:
+                            self.summary_rotator.force_rotate()
+                        continue
+
+                    cleaned = content.replace("###", "")
+                    return clean_summary_text(cleaned)
+
+                except Exception as e:
+                    logger.warning(
+                        "LLM call failed attempt %d/%d: %s", attempt + 1, max_retries, e
+                    )
+                    if self.summary_rotator:
+                        self.summary_rotator.force_rotate()
+                    if attempt == max_retries - 1:
+                        return "Error generating summary."
+
             return "Error generating summary."
         finally:
             self.key_queue.put(key_index)

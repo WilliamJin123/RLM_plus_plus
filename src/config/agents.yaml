@@ -32,11 +32,16 @@ summarization-agent:
   temperature: 0.0
   calls_per_model: 3
   models:
+  # Gemini models
+  - provider: gemini
+    model_id: gemini-2.5-flash
+  - provider: gemini
+    model_id: gemini-2.5-flash-lite
   # Cerebras models
   - provider: cerebras
     model_id: llama-3.3-70b
   - provider: cerebras
-    model_id: qwen-3-32b
+    model_id: gpt-oss-120b
   - provider: cerebras
     model_id: qwen-3-235b-a22b-instruct-2507
   # OpenRouter models (>100k context, capable of summarization)
@@ -70,11 +75,16 @@ smart-ingest-agent:
   temperature: 0.0
   calls_per_model: 3
   models:
+  # Gemini models
+  - provider: gemini
+    model_id: gemini-2.5-flash
+  - provider: gemini
+    model_id: gemini-2.5-flash-lite
   # Cerebras models
   - provider: cerebras
     model_id: llama-3.3-70b
   - provider: cerebras
-    model_id: qwen-3-32b
+    model_id: gpt-oss-120b
   - provider: cerebras
     model_id: qwen-3-235b-a22b-instruct-2507
   # OpenRouter models (>100k context, capable of summarization)
@@ -105,7 +115,39 @@ chunk-analyzer-agent:
   - Read the provided context and answer the user's question accurately.
   - Do not add external information.
   tools: []
-  model:
-    provider: cerebras
+  temperature: 0.0
+  calls_per_model: 3
+  models:
+  # Gemini models
+  - provider: gemini
+    model_id: gemini-2.5-flash
+  - provider: gemini
+    model_id: gemini-2.5-flash-lite
+  # Cerebras models
+  - provider: cerebras
+    model_id: llama-3.3-70b
+  - provider: cerebras
+    model_id: gpt-oss-120b
+  - provider: cerebras
     model_id: qwen-3-235b-a22b-instruct-2507
-    temperature: 0.0
+  # OpenRouter models (>100k context, capable of reading comprehension)
+  - provider: openrouter
+    model_id: meta-llama/llama-3.3-70b-instruct:free
+  - provider: openrouter
+    model_id: meta-llama/llama-3.1-405b-instruct:free
+  - provider: openrouter
+    model_id: qwen/qwen3-coder:free
+  - provider: openrouter
+    model_id: deepseek/deepseek-r1-0528:free
+  - provider: openrouter
+    model_id: google/gemini-2.0-flash-exp:free
+  - provider: openrouter
+    model_id: mistralai/devstral-2512:free
+  - provider: openrouter
+    model_id: nousresearch/hermes-3-llama-3.1-405b:free
+  - provider: openrouter
+    model_id: nvidia/nemotron-3-nano-30b-a3b:free
+  - provider: openrouter
+    model_id: google/gemma-3-27b-it:free
+  - provider: openrouter
+    model_id: tngtech/deepseek-r1t2-chimera:free

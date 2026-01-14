@@ -136,10 +136,23 @@ class BenchmarkEngine:
         with open(self.output_file, "a", encoding="utf-8") as f:
             f.write(json.dumps(record) + "\n")
 
-    def run(self, limit: int = None) -> None:
+    def run(self, limit: int = None, questions: List[int] = None) -> None:
         data = self.strategy.load_data(self.subset, limit)
         processed = self._get_processed_indices()
         correct_count, total_processed_count = self._load_existing_stats()
+
+        # Convert questions to a set for O(1) lookup (already 0-based from CLI parsing)
+        questions_set = set(questions) if questions else None
+
+        # Validate question indices
+        if questions_set:
+            max_idx = len(data) - 1
+            invalid = [q + 1 for q in questions_set if q < 0 or q > max_idx]
+            if invalid:
+                logger.warning(
+                    "Question indices out of range (1-%d): %s", len(data), invalid
+                )
+            questions_set = {q for q in questions_set if 0 <= q <= max_idx}
 
         logger.info(
             "Resuming %s/%s. %d items already done.",
@@ -149,6 +162,10 @@ class BenchmarkEngine:
         )
 
         for i, item in enumerate(data):
+            # Skip if not in specified questions list
+            if questions_set is not None and i not in questions_set:
+                continue
+            # Skip if already processed
             if i in processed:
                 continue
 
@@ -175,8 +192,14 @@ class BenchmarkEngine:
                 total_issues = sum(len(v) for v in issues.values())
 
                 if total_issues > 0:
-                    logger.info("Found %d issues, repairing...", total_issues)
-                    stats = validator.repair(dry_run=False)
+                    logger.info(
+                        "Found %d issues: %d provider_error, %d think_blocks, %d markdown_prefix",
+                        total_issues,
+                        len(issues["provider_error"]),
+                        len(issues["think_blocks"]),
+                        len(issues["markdown_prefix"]),
+                    )
+                    stats = validator.repair(dry_run=False, issues=issues)
                     logger.info(
                         "Repair complete: cleaned=%d, regenerated=%d, failed=%d",
                         stats["cleaned"],
