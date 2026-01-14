@@ -28,7 +28,7 @@ class TokenBuffer:
         """Counts tokens in a string using the current encoding."""
         if not text:
             return 0
-        return len(self.encoding.encode(text))
+        return len(self.encoding.encode(text, allowed_special='all'))
 
     def get_chunk_at(self, max_tokens: int, text: str) -> str:
         """
@@ -38,7 +38,7 @@ class TokenBuffer:
         if not text:
             return ""
 
-        tokens = self.encoding.encode(text)
+        tokens = self.encoding.encode(text, allowed_special='all')
 
         # If it fits, return original text to save decoding time
         if len(tokens) <= max_tokens:
