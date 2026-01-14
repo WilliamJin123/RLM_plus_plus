@@ -4,7 +4,7 @@ __pycache__/
 *$py.class
 **/*.env*
 **/*.venv
-
+**/.claude
 
 **/browsecomp_plus/
 **/longbenchv2/data.json

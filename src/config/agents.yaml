@@ -33,6 +33,7 @@ summarization-agent:
     provider: openrouter
     model_id: mistralai/devstral-2512:free
     temperature: 0.0
+
 smart-ingest-agent:
   instructions:
   - You are a smart text chunking assistant.
@@ -43,9 +44,6 @@ smart-ingest-agent:
     provider: cerebras
     model_id: llama-3.3-70b
     temperature: 0.0
-  storage: 
-    db_path: data/smart_ingest_agent.db
-    session_table: ingest_sessions
 
 chunk-analyzer-agent:
   instructions:
@@ -57,6 +55,3 @@ chunk-analyzer-agent:
     provider: cerebras
     model_id: qwen-3-235b-a22b-instruct-2507
     temperature: 0.0
-  storage: 
-    db_path: data/chunk_analyzer_agent.db
-    session_table: chunk_analysis_sessions
