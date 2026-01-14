@@ -10,7 +10,7 @@ from src.chunking.fixed import FixedTokenChunker
 from src.chunking.llm import SemanticBoundaryChunker
 from src.config.config import CONFIG
 from src.core.factory import AgentFactory, ModelRotator
-from src.core.storage import StorageEngine
+from src.core.storage import StorageEngine, clean_summary_text
 from src.utils.token_buffer import TokenBuffer
 
 logger = logging.getLogger(__name__)
@@ -77,8 +77,7 @@ class Indexer:
                 )
 
             response = agent.run(prompt)
-
-            cleaned_content = response.content.replace("###", "")
+            cleaned_content = clean_summary_text(response.content)
             return cleaned_content
         except Exception as e:
             logger.error("Error in LLM thread: %s", e)

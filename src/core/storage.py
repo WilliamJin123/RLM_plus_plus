@@ -1,6 +1,26 @@
+import re
 import sqlite3
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+
+
+def clean_summary_text(text: str) -> str:
+    """
+    Clean common artifacts from summary text.
+    - Removes <think>...</think> blocks
+    - Removes ```markdown prefix/suffix
+    """
+    if not text:
+        return text
+
+    # Remove think blocks (handles multi-line)
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
+
+    text = re.sub(r'```(?:\w+)?\n?', '', text)               
+    text = text.replace("###", "")                           
+    text = text.strip()            
+
+    return text.strip()
 
 
 class StorageEngine:
@@ -41,23 +61,61 @@ class StorageEngine:
                     level INTEGER,
                     parent_id INTEGER,
                     sequence_index INTEGER,
-                    FOREIGN KEY(parent_id) REFERENCES summaries(id)
-                )
-            """)
-
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS summary_chunks (
-                    summary_id INTEGER,
                     chunk_id INTEGER,
-                    PRIMARY KEY (summary_id, chunk_id),
-                    FOREIGN KEY(summary_id) REFERENCES summaries(id),
+                    FOREIGN KEY(parent_id) REFERENCES summaries(id),
                     FOREIGN KEY(chunk_id) REFERENCES chunks(id)
                 )
             """)
 
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_parent_seq ON summaries(parent_id, sequence_index)")
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_parent_seq ON summaries(parent_id, sequence_index)"
+            )
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_level ON summaries(level)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_chunk_id ON summaries(chunk_id)")
             conn.commit()
+
+        # Migrate existing DBs that have old schema
+        self._migrate_schema_if_needed()
+
+    def _migrate_schema_if_needed(self) -> None:
+        """Auto-migrate from summary_chunks junction table to direct chunk_id column."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+
+            # Check if summaries table has chunk_id column
+            cursor.execute("PRAGMA table_info(summaries)")
+            columns = [row[1] for row in cursor.fetchall()]
+
+            if "chunk_id" not in columns:
+                # Old schema detected - add chunk_id column
+                cursor.execute(
+                    "ALTER TABLE summaries ADD COLUMN chunk_id INTEGER REFERENCES chunks(id)"
+                )
+
+                # Migrate data from junction table if it exists
+                cursor.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name='summary_chunks'"
+                )
+                if cursor.fetchone():
+                    cursor.execute("""
+                        UPDATE summaries
+                        SET chunk_id = (
+                            SELECT chunk_id FROM summary_chunks
+                            WHERE summary_chunks.summary_id = summaries.id
+                        )
+                        WHERE level = 0
+                    """)
+
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_chunk_id ON summaries(chunk_id)")
+                conn.commit()
+
+            # Drop the old junction table if it exists
+            cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='summary_chunks'"
+            )
+            if cursor.fetchone():
+                cursor.execute("DROP TABLE summary_chunks")
+                conn.commit()
 
     def add_chunk(self, text: str, start: int, end: int, source: str = "") -> int:
         with self._get_connection() as conn:
@@ -84,10 +142,11 @@ class StorageEngine:
             return cursor.lastrowid
 
     def link_summary_to_chunk(self, summary_id: int, chunk_id: int) -> None:
+        """Links a summary to its source chunk using direct column."""
         with self._get_connection() as conn:
             conn.execute(
-                "INSERT OR IGNORE INTO summary_chunks (summary_id, chunk_id) VALUES (?, ?)",
-                (summary_id, chunk_id),
+                "UPDATE summaries SET chunk_id = ? WHERE id = ?",
+                (chunk_id, summary_id),
             )
 
     def update_summary_parent(self, summary_id: int, parent_id: int) -> None:
@@ -142,7 +201,7 @@ class StorageEngine:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT chunk_id FROM summary_chunks WHERE summary_id = ? LIMIT 1",
+                "SELECT chunk_id FROM summaries WHERE id = ?",
                 (summary_id,),
             )
             res = cursor.fetchone()
@@ -265,3 +324,93 @@ class StorageEngine:
                 (f"%{query}%", limit),
             )
             return cursor.fetchall()
+
+    # -------------------------------------------------------------------------
+    # Validation and Repair Methods
+    # -------------------------------------------------------------------------
+
+    def get_broken_summaries(self) -> Dict[str, List[Tuple[int, str]]]:
+        """
+        Scans all summaries and returns categorized broken ones.
+        Returns: {
+            'provider_error': [(id, text), ...],
+            'think_blocks': [(id, text), ...],
+            'markdown_prefix': [(id, text), ...]
+        }
+        """
+        broken: Dict[str, List[Tuple[int, str]]] = {
+            "provider_error": [],
+            "think_blocks": [],
+            "markdown_prefix": [],
+        }
+
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT id, summary_text FROM summaries")
+
+            for row in cursor.fetchall():
+                summary_id, text = row
+                if not text:
+                    continue
+
+                # Check for provider errors
+                if "Provider returned error" in text:
+                    broken["provider_error"].append((summary_id, text))
+                # Check for think blocks
+                elif "<think>" in text or "</think>" in text:
+                    broken["think_blocks"].append((summary_id, text))
+                # Check for markdown code block prefix
+                elif text.strip().startswith("```markdown"):
+                    broken["markdown_prefix"].append((summary_id, text))
+
+        return broken
+
+    def get_summary_with_context(self, summary_id: int) -> Optional[Dict[str, Any]]:
+        """
+        Get summary with its associated chunk text (for regeneration).
+        Returns: {'id': int, 'level': int, 'chunk_id': int, 'chunk_text': str, 'child_texts': List[str]}
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+
+            # Get summary metadata
+            cursor.execute(
+                "SELECT id, level, parent_id, sequence_index, chunk_id FROM summaries WHERE id = ?",
+                (summary_id,),
+            )
+            row = cursor.fetchone()
+
+            if not row:
+                return None
+
+            result: Dict[str, Any] = {
+                "id": row[0],
+                "level": row[1],
+                "parent_id": row[2],
+                "sequence_index": row[3],
+                "chunk_id": row[4],
+                "chunk_text": None,
+                "child_texts": [],
+            }
+
+            if row[1] == 0 and row[4]:  # Level 0 - get chunk text
+                cursor.execute("SELECT text FROM chunks WHERE id = ?", (row[4],))
+                chunk_row = cursor.fetchone()
+                if chunk_row:
+                    result["chunk_text"] = chunk_row[0]
+            else:  # Higher level - get child summary texts
+                cursor.execute(
+                    "SELECT summary_text FROM summaries WHERE parent_id = ? ORDER BY sequence_index",
+                    (summary_id,),
+                )
+                result["child_texts"] = [r[0] for r in cursor.fetchall()]
+
+            return result
+
+    def update_summary_text(self, summary_id: int, new_text: str) -> None:
+        """Update the text of an existing summary."""
+        with self._get_connection() as conn:
+            conn.execute(
+                "UPDATE summaries SET summary_text = ? WHERE id = ?",
+                (new_text, summary_id),
+            )
