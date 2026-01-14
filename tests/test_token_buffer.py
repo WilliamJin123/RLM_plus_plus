@@ -1,48 +1,57 @@
 import pytest
 from src.utils.token_buffer import TokenBuffer
 
+
 def test_token_buffer_initialization():
     tb = TokenBuffer()
-    assert tb.token_count == 0
-    assert tb.text == ""
+    assert tb.encoding is not None
 
-def test_token_buffer_add_text():
-    tb = TokenBuffer()
-    text = "Hello world"
-    tb.add_text(text)
-    assert tb.text == text
-    assert tb.token_count > 0
-    
-    # Check incremental update
-    initial_count = tb.token_count
-    tb.add_text(" again")
-    assert tb.token_count > initial_count
-    assert tb.text == "Hello world again"
 
-def test_token_buffer_clear():
+def test_token_buffer_initialization_with_model():
+    tb = TokenBuffer(model_name="gpt-4o")
+    assert tb.encoding is not None
+
+
+def test_token_buffer_count_tokens():
     tb = TokenBuffer()
-    tb.add_text("Test")
-    tb.clear()
-    assert tb.token_count == 0
-    assert tb.text == ""
+    count = tb.count_tokens("Hello world")
+    assert count > 0
+
+
+def test_token_buffer_count_tokens_empty():
+    tb = TokenBuffer()
+    count = tb.count_tokens("")
+    assert count == 0
+
+
+def test_token_buffer_count_tokens_none():
+    tb = TokenBuffer()
+    count = tb.count_tokens(None)
+    assert count == 0
+
 
 def test_token_buffer_get_chunk_at():
     tb = TokenBuffer()
-    # "Hello world" is usually 2 tokens ("Hello", " world") or similar
-    tb.add_text("Hello world") 
-    
-    # We don't know exact tokenization without checking implementation, 
-    # but we can check constraints.
-    chunk = tb.get_chunk_at(100)
+    # "Hello world" is typically 2-3 tokens
+    chunk = tb.get_chunk_at(100, text="Hello world")
     assert chunk == "Hello world"
-    
-    # Test truncation
-    # Force a long string
-    long_text = "word " * 100
-    tb.clear()
-    tb.add_text(long_text)
-    
-    chunk_small = tb.get_chunk_at(10)
-    # Re-encode check
-    encoding = tb.encoding
-    assert len(encoding.encode(chunk_small)) <= 10
+
+
+def test_token_buffer_get_chunk_at_truncates():
+    tb = TokenBuffer()
+    long_text = "word " * 100  # Many tokens
+    chunk = tb.get_chunk_at(10, text=long_text)
+    # Verify truncation worked
+    assert len(tb.encoding.encode(chunk)) <= 10
+
+
+def test_token_buffer_get_chunk_at_empty():
+    tb = TokenBuffer()
+    chunk = tb.get_chunk_at(100, text="")
+    assert chunk == ""
+
+
+def test_token_buffer_get_chunk_at_none():
+    tb = TokenBuffer()
+    chunk = tb.get_chunk_at(100, text=None)
+    assert chunk == ""
