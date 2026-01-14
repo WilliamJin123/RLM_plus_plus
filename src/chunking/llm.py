@@ -4,7 +4,7 @@ import re
 from typing import Any, Dict, Generator
 
 from src.chunking.base import BaseChunker, ChunkResult
-from src.core.factory import AgentFactory
+from src.core.factory import AgentFactory, ModelRotator
 from src.utils.token_buffer import TokenBuffer
 
 logger = logging.getLogger(__name__)
@@ -20,7 +20,7 @@ MAX_PROMPT_CHARS = 2000
 class SemanticBoundaryChunker(BaseChunker):
     def __init__(self, max_tokens: int, token_buffer: TokenBuffer):
         super().__init__(max_tokens, token_buffer)
-        self.agent = AgentFactory.create_agent("smart-ingest-agent")
+        self.agent, self.rotator = AgentFactory.create_rotating_agent("smart-ingest-agent")
 
     def chunk_text(self, text: str) -> Generator[ChunkResult, None, None]:
         if not text:
@@ -75,6 +75,11 @@ class SemanticBoundaryChunker(BaseChunker):
         )
 
         try:
+            # Rotate model before each call
+            model_config = self.rotator.get_next_config()
+            self.agent.model = AgentFactory.create_model(model_config)
+            logger.debug("Using model: %s/%s", model_config.provider, model_config.model_id)
+
             response = self.agent.run(prompt)
             content = response.content
             logger.debug("SmartIngest response: %s", content)

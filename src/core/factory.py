@@ -1,17 +1,46 @@
 import logging
 import threading
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from agno.agent import Agent
 from agno.db.sqlite import SqliteDb
 from agno.tracing import setup_tracing
 from keycycle import MultiProviderWrapper
 
-from src.config.config import ModelConfig, CONFIG
+from src.config.config import ModelConfig, ModelPoolConfig, CONFIG
 from src.tools.rlm_tools import TOOL_REGISTRY
 
 logger = logging.getLogger(__name__)
+
+
+class ModelRotator:
+    """Thread-safe round-robin model rotator with configurable calls per model."""
+
+    def __init__(self, configs: List[ModelConfig], calls_per_model: int = 3):
+        self._configs = configs
+        self._calls_per_model = calls_per_model
+        self._index = 0
+        self._call_count = 0
+        self._lock = threading.Lock()
+
+    def get_next_config(self) -> ModelConfig:
+        """Get the next model config, rotating after calls_per_model calls."""
+        with self._lock:
+            config = self._configs[self._index]
+            self._call_count += 1
+            if self._call_count >= self._calls_per_model:
+                self._call_count = 0
+                self._index = (self._index + 1) % len(self._configs)
+                logger.debug(
+                    "Rotating to model %s/%s",
+                    self._index + 1,
+                    len(self._configs),
+                )
+            return config
+
+    def __len__(self) -> int:
+        return len(self._configs)
 
 
 class AgentFactory:
@@ -85,11 +114,22 @@ class AgentFactory:
         if not config_record:
             raise ValueError(f"No configuration found for agent_id: {agent_id}")
 
-        model = AgentFactory.create_model(
-            config_record.model_settings,
-            estimated_tokens,
-            key_index,
-        )
+        # Handle single model or pick first from rotation pool
+        if config_record.model_settings:
+            model = AgentFactory.create_model(
+                config_record.model_settings,
+                estimated_tokens,
+                key_index,
+            )
+        elif config_record.model_pool:
+            # Use first model from pool as default
+            model = AgentFactory.create_model(
+                config_record.model_pool.models[0],
+                estimated_tokens,
+                key_index,
+            )
+        else:
+            raise ValueError(f"No model configuration found for agent_id: {agent_id}")
 
         project_root = Path(__file__).resolve().parent.parent.parent
         storage_settings = config_record.storage_settings
@@ -130,3 +170,48 @@ class AgentFactory:
             agent_kwargs["num_history_runs"] = num_history_runs
 
         return Agent(**agent_kwargs)
+
+    @staticmethod
+    def create_rotating_agent(
+        agent_id: str,
+        session_id: Optional[str] = None,
+        content_db_path: Optional[str] = None,
+        estimated_tokens: int = 1000,
+    ) -> Tuple[Agent, ModelRotator]:
+        """
+        Create an agent with a ModelRotator for model rotation.
+
+        Returns a tuple of (Agent, ModelRotator). The caller should use the rotator
+        to get new model configs and update agent.model before each call.
+        """
+        config_record = CONFIG.get_agent(agent_id)
+        if not config_record:
+            raise ValueError(f"No configuration found for agent_id: {agent_id}")
+
+        if not config_record.model_pool:
+            raise ValueError(
+                f"Agent '{agent_id}' does not have model rotation configured. "
+                "Use 'models' list in config instead of 'model'."
+            )
+
+        rotator = ModelRotator(
+            configs=config_record.model_pool.models,
+            calls_per_model=config_record.model_pool.calls_per_model,
+        )
+
+        logger.info(
+            "Created ModelRotator for '%s' with %d models, %d calls per model",
+            agent_id,
+            len(rotator),
+            config_record.model_pool.calls_per_model,
+        )
+
+        # Create agent with first model
+        agent = AgentFactory.create_agent(
+            agent_id=agent_id,
+            session_id=session_id,
+            content_db_path=content_db_path,
+            estimated_tokens=estimated_tokens,
+        )
+
+        return agent, rotator
