@@ -3,6 +3,7 @@ from typing import Optional
 from agno.tools import Toolkit
 from agno.tools.python import PythonTools
 
+from src.config.config import CONFIG
 from src.core.storage import StorageEngine
 
 
@@ -15,6 +16,18 @@ class RLMTools(Toolkit):
             self.search_summaries,
         ]
         super().__init__(name="rlm_tools", tools=tools, **kwargs)
+
+        # Setup model rotator for chunk-analyzer-agent
+        from src.core.factory import ModelRotator
+
+        chunk_config = CONFIG.get_agent("chunk-analyzer-agent")
+        if chunk_config and chunk_config.model_pool:
+            self._chunk_rotator: Optional[ModelRotator] = ModelRotator(
+                configs=chunk_config.model_pool.models,
+                calls_per_model=chunk_config.model_pool.calls_per_model,
+            )
+        else:
+            self._chunk_rotator = None
 
     def inspect_document_hierarchy(self) -> str:
         """
@@ -111,17 +124,40 @@ class RLMTools(Toolkit):
             f"<content>\n{text}\n</content>"
         )
 
-    def _spawn_sub_agent(self, context_text: str, user_query: str) -> str:
-        """Creates a temporary agent to read large context and return a concise answer."""
+    def _spawn_sub_agent(
+        self, context_text: str, user_query: str, max_retries: int = 3
+    ) -> str:
+        """Creates a temporary agent with retry and force rotation on failure."""
         from src.core.factory import AgentFactory
 
-        try:
-            sub_agent = AgentFactory.create_agent("chunk-analyzer-agent")
-            prompt = f"<context>\n{context_text}\n</context>\n\n<question>{user_query}</question>"
-            response = sub_agent.run(prompt)
-            return f"<subagent>{response.content}</subagent>"
-        except Exception as e:
-            return f"Error in sub-agent execution: {e}"
+        sub_agent = AgentFactory.create_agent("chunk-analyzer-agent")
+        prompt = f"<context>\n{context_text}\n</context>\n\n<question>{user_query}</question>"
+
+        for attempt in range(max_retries):
+            try:
+                # Apply model rotation if configured
+                if self._chunk_rotator:
+                    model_config = self._chunk_rotator.get_next_config()
+                    sub_agent.model = AgentFactory.create_model(model_config)
+
+                response = sub_agent.run(prompt)
+                content = response.content
+
+                # Check for provider error in response
+                if "Provider returned error" in content:
+                    if self._chunk_rotator:
+                        self._chunk_rotator.force_rotate()
+                    continue
+
+                return f"<subagent>{content}</subagent>"
+
+            except Exception as e:
+                if self._chunk_rotator:
+                    self._chunk_rotator.force_rotate()
+                if attempt == max_retries - 1:
+                    return f"Error in sub-agent execution: {e}"
+
+        return "Error: All retry attempts failed for sub-agent."
 
     def search_summaries(self, query: str) -> str:
         """Keyword search through the summary tree to find relevant starting nodes."""

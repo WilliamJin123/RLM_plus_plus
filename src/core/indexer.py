@@ -61,26 +61,46 @@ class Indexer:
         else:
             self.summary_rotator = None
 
-    def _get_summary_from_llm(self, prompt: str) -> str:
-        """Thread-safe wrapper to checkout a key, run the agent, and return the key."""
+    def _get_summary_from_llm(self, prompt: str, max_retries: int = 3) -> str:
+        """Thread-safe wrapper with retry and force rotation on failure."""
         key_index = self.key_queue.get()
 
         try:
             agent = AgentFactory.create_agent("summarization-agent", key_index=key_index)
 
-            # Rotate model if configured
-            if self.summary_rotator:
-                model_config = self.summary_rotator.get_next_config()
-                agent.model = AgentFactory.create_model(model_config)
-                logger.debug(
-                    "Using model: %s/%s", model_config.provider, model_config.model_id
-                )
+            for attempt in range(max_retries):
+                try:
+                    # Rotate model if configured
+                    if self.summary_rotator:
+                        model_config = self.summary_rotator.get_next_config()
+                        agent.model = AgentFactory.create_model(model_config)
+                        logger.debug(
+                            "Using model: %s/%s", model_config.provider, model_config.model_id
+                        )
 
-            response = agent.run(prompt)
-            cleaned_content = clean_summary_text(response.content)
-            return cleaned_content
-        except Exception as e:
-            logger.error("Error in LLM thread: %s", e)
+                    response = agent.run(prompt)
+                    content = response.content
+
+                    # Check for provider error in response
+                    if "Provider returned error" in content:
+                        logger.warning(
+                            "Provider error on attempt %d/%d", attempt + 1, max_retries
+                        )
+                        if self.summary_rotator:
+                            self.summary_rotator.force_rotate()
+                        continue
+
+                    return clean_summary_text(content)
+
+                except Exception as e:
+                    logger.warning(
+                        "LLM call failed attempt %d/%d: %s", attempt + 1, max_retries, e
+                    )
+                    if self.summary_rotator:
+                        self.summary_rotator.force_rotate()
+                    if attempt == max_retries - 1:
+                        return "Error generating summary."
+
             return "Error generating summary."
         finally:
             self.key_queue.put(key_index)

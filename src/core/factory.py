@@ -39,6 +39,20 @@ class ModelRotator:
                 )
             return config
 
+    def force_rotate(self) -> None:
+        """Force immediate rotation to next model (used on failure)."""
+        with self._lock:
+            self._call_count = 0
+            self._index = (self._index + 1) % len(self._configs)
+            next_config = self._configs[self._index]
+            logger.warning(
+                "Forced rotation due to failure. Now on model %d/%d: %s/%s",
+                self._index + 1,
+                len(self._configs),
+                next_config.provider,
+                next_config.model_id,
+            )
+
     def __len__(self) -> int:
         return len(self._configs)
 

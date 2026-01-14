@@ -61,7 +61,7 @@ class SemanticBoundaryChunker(BaseChunker):
 
             current_idx = current_idx + next_start_rel
 
-    def _find_cut_point(self, text: str) -> Dict[str, Any]:
+    def _find_cut_point(self, text: str, max_retries: int = 3) -> Dict[str, Any]:
         # Show a representative portion of the text for context
         display_text = text[-MAX_PROMPT_CHARS:] if len(text) > MAX_PROMPT_CHARS else text
 
@@ -74,31 +74,47 @@ class SemanticBoundaryChunker(BaseChunker):
             f'Return JSON: {{ "cut_index": <int>, "next_chunk_start_index": <int> }}'
         )
 
-        try:
-            # Rotate model before each call
-            model_config = self.rotator.get_next_config()
-            self.agent.model = AgentFactory.create_model(model_config)
-            logger.debug("Using model: %s/%s", model_config.provider, model_config.model_id)
+        last_error = None
+        for attempt in range(max_retries):
+            try:
+                # Rotate model before each call
+                model_config = self.rotator.get_next_config()
+                self.agent.model = AgentFactory.create_model(model_config)
+                logger.debug("Using model: %s/%s", model_config.provider, model_config.model_id)
 
-            response = self.agent.run(prompt)
-            content = response.content
-            logger.debug("SmartIngest response: %s", content)
+                response = self.agent.run(prompt)
+                content = response.content
+                logger.debug("SmartIngest response: %s", content)
 
-            parsed = self._extract_json(content)
-            cut = min(max(0, int(parsed.get("cut_index", len(text)))), len(text))
-            next_start = min(max(0, int(parsed.get("next_chunk_start_index", len(text) - 100))), len(text))
+                # Check for provider error in response
+                if "Provider returned error" in content:
+                    logger.warning(
+                        "Provider error on attempt %d/%d", attempt + 1, max_retries
+                    )
+                    self.rotator.force_rotate()
+                    continue
 
-            if next_start >= cut:
-                next_start = max(0, cut - DEFAULT_OVERLAP_CHARS)
+                parsed = self._extract_json(content)
+                cut = min(max(0, int(parsed.get("cut_index", len(text)))), len(text))
+                next_start = min(max(0, int(parsed.get("next_chunk_start_index", len(text) - 100))), len(text))
 
-            return {
-                "cut_index": cut,
-                "next_chunk_start_index": next_start,
-            }
+                if next_start >= cut:
+                    next_start = max(0, cut - DEFAULT_OVERLAP_CHARS)
 
-        except Exception as e:
-            logger.error("Error finding cut point: %s", e)
-            raise
+                return {
+                    "cut_index": cut,
+                    "next_chunk_start_index": next_start,
+                }
+
+            except Exception as e:
+                logger.warning(
+                    "Error finding cut point attempt %d/%d: %s", attempt + 1, max_retries, e
+                )
+                last_error = e
+                self.rotator.force_rotate()
+
+        logger.error("All %d attempts failed for cut point detection", max_retries)
+        raise last_error or RuntimeError("All retry attempts failed")
 
     def _extract_json(self, content: str) -> Dict[str, Any]:
         """Extract JSON from LLM response, handling code blocks and think tags."""

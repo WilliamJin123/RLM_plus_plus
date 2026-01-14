@@ -71,7 +71,7 @@ class StorageEngine:
                 "CREATE INDEX IF NOT EXISTS idx_parent_seq ON summaries(parent_id, sequence_index)"
             )
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_level ON summaries(level)")
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_chunk_id ON summaries(chunk_id)")
+            # Note: idx_chunk_id is created in _migrate_schema_if_needed() after ensuring column exists
             conn.commit()
 
         # Migrate existing DBs that have old schema
@@ -105,9 +105,11 @@ class StorageEngine:
                         )
                         WHERE level = 0
                     """)
-
-                cursor.execute("CREATE INDEX IF NOT EXISTS idx_chunk_id ON summaries(chunk_id)")
                 conn.commit()
+
+            # Always ensure the index exists (for both old and new databases)
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_chunk_id ON summaries(chunk_id)")
+            conn.commit()
 
             # Drop the old junction table if it exists
             cursor.execute(
