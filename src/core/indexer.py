@@ -1,138 +1,186 @@
+import logging
+import queue
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-import time
-from typing import List
+from typing import List, Optional
 
+from src.chunking.base import BaseChunker
+from src.chunking.fixed import FixedTokenChunker
+from src.chunking.llm import SemanticBoundaryChunker
 from src.core.factory import AgentFactory
 from src.core.storage import StorageEngine
-from src.core.smart_ingest import SmartIngestor
 from src.utils.token_buffer import TokenBuffer
 
+logger = logging.getLogger(__name__)
+
+VALID_STRATEGIES = {"fixed", "llm"}
+
+
 class Indexer:
-    def __init__(self, db_path: str = None, max_chunk_tokens: int = 4000):
+    def __init__(
+        self,
+        db_path: Optional[str] = None,
+        max_chunk_tokens: int = 4000,
+        strategy: str = "fixed",
+        num_keys: int = 20,
+    ):
+        if strategy not in VALID_STRATEGIES:
+            raise ValueError(f"Unknown chunking strategy: {strategy}. Valid: {VALID_STRATEGIES}")
+
         self.db_path = db_path
         self.storage = StorageEngine(self.db_path)
-        self.max_chunk_tokens = max_chunk_tokens
-        self.summarizer = AgentFactory.create_agent("summarization-agent")
-        self.smart_ingestor = SmartIngestor(estimated_tokens=max_chunk_tokens)
         self.token_buffer = TokenBuffer(model_name="gpt-4o")
+        self.max_chunk_tokens = max_chunk_tokens
 
-    def _summarize_text(self, text: str) -> str:
-        """Helper to summarize text using the configured agent."""
-        resp = self.summarizer.run(f"Summarize the following list of document summaries into a single cohesive summary:\n\n{text}")
-        return resp.content
+        self.key_queue: queue.Queue[int] = queue.Queue()
+        for i in range(num_keys):
+            self.key_queue.put(i)
 
-    def ingest_file(self, file_path: str,group_size: int = 5) -> None:
-        """
-        Ingests a file into the database using smart chunking and recursive summarization.
-        
-        Args:
-            file_path: Path to the file to be indexed.
-            target_chunk_tokens: The approximate number of tokens desired per chunk. The SmartIngestor will find the best semantic cut point near this target.
-            group_size: How many chunks (or lower-level summaries) to group together when creating the next level of the summary hierarchy. Defaults to 2 (i.e., binary tree).
-        """
-        print(f"--- Indexing {file_path} ---")
+        self.db_lock = threading.Lock()
+        self.max_workers = num_keys
+
+        self.chunker: BaseChunker
+        if strategy == "llm":
+            self.chunker = SemanticBoundaryChunker(max_chunk_tokens, self.token_buffer)
+        else:
+            self.chunker = FixedTokenChunker(max_chunk_tokens, self.token_buffer)
+
+    def _get_summary_from_llm(self, prompt: str) -> str:
+        """Thread-safe wrapper to checkout a key, run the agent, and return the key."""
+        key_index = self.key_queue.get()
+
+        try:
+            agent = AgentFactory.create_agent("summarization-agent", key_index=key_index)
+            response = agent.run(prompt)
+            return response.content
+        except Exception as e:
+            logger.error("Error in LLM thread: %s", e)
+            return "Error generating summary."
+        finally:
+            self.key_queue.put(key_index)
+
+    def ingest_file(self, file_path: str, group_size: int = 5, max_depth: int = 1) -> None:
         path = Path(file_path)
-        with path.open('r', encoding='utf-8') as f:
+        if not path.exists():
+            raise FileNotFoundError(f"File not found: {file_path}")
+        if not path.is_file():
+            raise ValueError(f"Path is not a file: {file_path}")
+
+        logger.info("Indexing %s using %d threads", file_path, self.max_workers)
+
+        with path.open("r", encoding="utf-8") as f:
             full_text = f.read()
-        
-        level_0_ids = self._process_chunks(full_text, str(path.name))
-        self._build_hierarchy(level_0_ids, group_size=group_size)
-        print("--- Indexing Complete ---")
 
-    def _process_chunks(self, full_text: str, filename: str) -> List[int]:
+        if not full_text.strip():
+            logger.warning("File is empty: %s", file_path)
+            return
+
+        level_0_ids = self._process_chunks_parallel(full_text, path.name)
+
+        if max_depth > 0 and len(level_0_ids) > 1:
+            self._build_hierarchy_parallel(level_0_ids, group_size=group_size, max_depth=max_depth)
+
+        logger.info("Indexing complete for %s", file_path)
+
+    def _process_chunks_parallel(self, full_text: str, filename: str) -> List[int]:
         """
-        Slices text, stores chunks, stores L0 summaries, and links them.
-        Returns a list of the created L0 Summary IDs.
+        1. Chunks text (Main Thread).
+        2. Saves chunks to DB (Main Thread - fast).
+        3. Generates summaries (Parallel Threads).
+        4. Saves summaries/links (Main Thread via Lock).
         """
-        current_idx = 0
+        logger.info("Chunking text...")
+        chunks = list(self.chunker.chunk_text(full_text))
+
+        chunk_ids = []
+        with self.db_lock:
+            for chunk_res in chunks:
+                chunk_id = self.storage.add_chunk(
+                    text=chunk_res.text,
+                    start=chunk_res.start_index,
+                    end=chunk_res.end_index,
+                    source=filename,
+                )
+                chunk_ids.append(chunk_id)
+
+        logger.info("Generated %d chunks. Starting parallel summarization...", len(chunk_ids))
+
+        prompts = [
+            f"Summarize the following document segment. "
+            f"Identify key topics, entities, and events:\n\n{chunk_res.text}"
+            for chunk_res in chunks
+        ]
+
         summary_ids = []
-        
-        # We grab a 'safe' lookahead window of characters that is definitely larger 
-        # than the token limit, then let TokenBuffer trim it down precisely.
-        max_chunk_tokens = self.max_chunk_tokens
-        char_lookahead = max_chunk_tokens * 5 
-
-        while current_idx < len(full_text):
-            
-            self.token_buffer.clear()
-            # Define window
-            raw_end = min(current_idx + char_lookahead, len(full_text))
-            raw_segment = full_text[current_idx:raw_end]
-            self.token_buffer.add_text(raw_segment)
-            valid_window_text = self.token_buffer.get_chunk_at(max_chunk_tokens)
-            actual_tokens = self.token_buffer.count_tokens(valid_window_text)
-            print(f"Processing text segment at index {current_idx} ({actual_tokens} tokens), {len(valid_window_text)} characters")
-
-            # Analysis
-            result = self.smart_ingestor.analyze_segment(valid_window_text)
-            # Calculate Absolute Positions
-            abs_cut = current_idx + result['cut_index']
-            abs_next = current_idx + result['next_chunk_start_index']
-            
-            chunk_text = full_text[current_idx:abs_cut]
-            
-            # Store Chunk
-            chunk_id = self.storage.add_chunk(
-                text=chunk_text,
-                start=current_idx,
-                end=abs_cut,
-                source=filename
-            )
-            
-            # Store Level 0 Summary
-            sum_id = self.storage.add_summary(
-                text=result['summary'],
-                level=0,
-                parent_id=None # Will be filled later
-            )
-            
-            # Link
-            self.storage.link_summary_to_chunk(sum_id, chunk_id)
-            summary_ids.append(sum_id)
-            
-            chunk_tokens = self.token_buffer.count_tokens(chunk_text)
-            print(f"Created L0 Node {sum_id} -> Chunk {chunk_id} ({chunk_tokens} tokens)")
-            
-            # Move pointer
-            if abs_next >= len(full_text):
-                break
-            current_idx = abs_next
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            summary_iterator = executor.map(self._get_summary_from_llm, prompts)
+            for sequence_index, summary_text in enumerate(summary_iterator):
+                with self.db_lock:
+                    sum_id = self.storage.add_summary(
+                        text=summary_text,
+                        level=0,
+                        parent_id=None,
+                        sequence_index=sequence_index,
+                    )
+                    self.storage.link_summary_to_chunk(sum_id, chunk_ids[sequence_index])
+                    summary_ids.append(sum_id)
 
         return summary_ids
 
-    def _build_hierarchy(self, child_ids: List[int], group_size: int):
+    def _build_hierarchy_parallel(
+        self,
+        child_ids: List[int],
+        group_size: int,
+        max_depth: int,
+    ) -> None:
         """
-        Recursively groups summaries and builds parents until root.
+        Parallelizes the batch processing within each level.
+        Levels must still be processed sequentially (L0 -> L1 -> L2).
         """
         current_ids = child_ids
         current_level = 0
-        
-        while len(current_ids) > 1:
-            print(f"Building Level {current_level + 1} from {len(current_ids)} nodes...")
-            next_level_ids = []
-            
-            # Process in batches
+
+        while current_level < max_depth and len(current_ids) > 1:
+            logger.info("Building Level %d from %d nodes...", current_level + 1, len(current_ids))
+
+            batches_ids = []
+            prompts = []
+
             for i in range(0, len(current_ids), group_size):
                 batch_ids = current_ids[i : i + group_size]
-               
-                batch_texts = self.storage.get_summaries(batch_ids)
-                combined_text = "\n\n".join(batch_texts)
-                
-                # Generate Higher Level Summary
-                new_summary = self._summarize_text(combined_text)
-                
-                # Store Parent Node
-                parent_id = self.storage.add_summary(
-                    text=new_summary,
-                    level=current_level + 1
+                batches_ids.append(batch_ids)
+
+                with self.db_lock:
+                    batch_texts = self.storage.get_summaries(batch_ids)
+
+                combined_text = "\n\n".join(t for t in batch_texts if t)
+                prompts.append(
+                    f"Synthesize the following summaries into a cohesive higher-level summary:\n\n"
+                    f"{combined_text}"
                 )
-                next_level_ids.append(parent_id)
-                
-                # Link Children to Parent
-                for child_id in batch_ids:
-                    self.storage.update_summary_parent(child_id, parent_id)
-                
-                time.sleep(0.5) # Rate limit safety
-            
+
+            next_level_ids = []
+
+            with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+                summary_iterator = executor.map(self._get_summary_from_llm, prompts)
+
+                for sequence_index, summary_text in enumerate(summary_iterator):
+                    batch_ids = batches_ids[sequence_index]
+
+                    with self.db_lock:
+                        parent_id = self.storage.add_summary(
+                            text=summary_text,
+                            level=current_level + 1,
+                            sequence_index=sequence_index,
+                        )
+                        for child_id in batch_ids:
+                            self.storage.update_summary_parent(child_id, parent_id)
+
+                        next_level_ids.append(parent_id)
+
             current_ids = next_level_ids
             current_level += 1
+
+        if len(current_ids) == 1:
+            logger.info("Tree converged to a single root node.")

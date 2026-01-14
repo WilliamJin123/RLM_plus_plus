@@ -7,8 +7,7 @@ rlm-agent:
   - 1. Start by calling 'inspect_document_hierarchy' to see the high-level overview.
   - 2. Use 'examine_summary_node' to drill down into interesting sections.
   - 4. Use 'search_summaries' if you are looking for specific keywords.
-  - 5. Use 'PythonTools' if you need to perform calculations, loop through data, or
-    verify facts across multiple chunks.
+  - 5. Use 'PythonTools' if you need to perform calculations, loop through data, or verify facts across multiple chunks.
   - Be systematic and efficient. Use your tools to minimize the amount of raw text
     you read.
   tools:
@@ -31,13 +30,9 @@ summarization-agent:
   - They must encapsulate the main points clearly, and give enough context for a user to realize when they should read the full text.
   tools: []
   model:
-    provider: cerebras
-    model_id: qwen-3-235b-a22b-instruct-2507
+    provider: openrouter
+    model_id: mistralai/devstral-2512:free
     temperature: 0.0
-  storage:
-    db_path: data/sumarization_agent.db
-    session_table: summarization_sessions
-
 smart-ingest-agent:
   instructions:
   - You are a smart text chunking assistant.
@@ -46,7 +41,7 @@ smart-ingest-agent:
   tools: []
   model:
     provider: cerebras
-    model_id: zai-glm-4.6
+    model_id: llama-3.3-70b
     temperature: 0.0
   storage: 
     db_path: data/smart_ingest_agent.db

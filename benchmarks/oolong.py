@@ -1,29 +1,29 @@
 import ast
 import re
-from typing import Dict, List, Any, Tuple
+from typing import Any, Dict, List, Optional, Tuple
+
 from datasets import load_dataset
+
 from base import BASE_DIR, BenchmarkLogic
 
 
-    
 class OolongLogic(BenchmarkLogic):
-    def load_data(self, subset: str, limit: int = None) -> List[Dict[str, Any]]:
-        print(f"Loading Oolong ({subset})...")
+    def load_data(self, subset: str, limit: Optional[int] = None) -> List[Dict[str, Any]]:
         data_dir = BASE_DIR / "datasets" / "oolong" / "filtered_oolong_parquet"
-        
         filename = f"{subset}_1024000_plus.parquet"
         file_path = data_dir / filename
-        
+
         if not file_path.exists():
-             raise FileNotFoundError(f"Dataset not found: {file_path}")
+            raise FileNotFoundError(f"Dataset not found: {file_path}")
 
         ds = load_dataset("parquet", data_files=str(file_path), split="train")
         if limit:
-            ds = ds.select(range(limit))
-        return ds
+            ds = ds.select(range(min(limit, len(ds))))
+
+        return list(ds)
 
     def get_context(self, item: Dict[str, Any]) -> str:
-        return item.get('context_window_text', '')
+        return item.get("context_window_text", "")
 
     def create_prompt(self, item: Dict[str, Any]) -> str:
         return (
@@ -35,24 +35,31 @@ class OolongLogic(BenchmarkLogic):
         )
 
     def evaluate(self, agent_response: str, item: Dict[str, Any]) -> Tuple[bool, str]:
-        raw_ans = item.get('answer', '')
-        # Oolong answers are often stringified lists "['correct']"
+        raw_ans = item.get("answer", "")
+
+        # Oolong answers are often stringified lists like "['correct']"
         try:
             answers = ast.literal_eval(raw_ans)
-            target = str(answers[0]).lower().strip() if isinstance(answers, list) else str(raw_ans).lower().strip()
-        except:
+            if isinstance(answers, list) and answers:
+                target = str(answers[0]).lower().strip()
+            else:
+                target = str(raw_ans).lower().strip()
+        except (ValueError, SyntaxError):
             target = str(raw_ans).lower().strip()
 
         resp = agent_response.strip()
-        
-        # Look for "Label: answer"
+
+        # Look for "Label: answer" pattern
         match = re.search(r"Label:\s*([a-zA-Z]+)", resp, re.IGNORECASE)
         if match:
             prediction = match.group(1).lower()
         else:
-            # Fallback: check last word
-            last_word = re.split(r'\s+', resp)[-1].lower()
-            prediction = re.sub(r'[^\w]', '', last_word)
-            
-        return (prediction == target, target)
+            # Fallback: extract last word and clean it
+            words = resp.split()
+            if words:
+                last_word = words[-1].lower()
+                prediction = re.sub(r"[^\w]", "", last_word)
+            else:
+                prediction = ""
 
+        return prediction == target, target

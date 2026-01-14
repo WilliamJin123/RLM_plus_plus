@@ -1,25 +1,27 @@
-import os
 import json
-import tempfile
+import logging
+import os
 import sys
+import tempfile
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import List, Dict, Any, Set, Tuple
+from typing import Any, Dict, List, Set, Tuple
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-sys.path.append(BASE_DIR.as_posix())
+sys.path.insert(0, str(BASE_DIR))
 
-from src.core.indexer import Indexer
 from src.core.factory import AgentFactory
+from src.core.indexer import Indexer
+
+logger = logging.getLogger(__name__)
 
 RESULTS_DIR = BASE_DIR / "results"
 RESULTS_DIR.mkdir(exist_ok=True)
-TEMP_DB_PATH = BASE_DIR / "data" / "benchmark_temp.db"
+
 
 class BenchmarkLogic(ABC):
-    """
-    Defines the custom logic for a specific dataset (LongBench, Oolong, etc).
-    """
+    """Defines the custom logic for a specific dataset (LongBench, Oolong, etc)."""
+
     @abstractmethod
     def load_data(self, subset: str, limit: int = None) -> List[Dict[str, Any]]:
         pass
@@ -39,27 +41,37 @@ class BenchmarkLogic(ABC):
 
 
 class BenchmarkEngine:
-    def __init__(self, name: str, subset: str, strategy: BenchmarkLogic, max_chunk_tokens: int = 50000):
+    def __init__(
+        self,
+        name: str,
+        subset: str,
+        strategy: BenchmarkLogic,
+        max_chunk_tokens: int = 50000,
+        db_output_dir: str = None,
+    ):
         self.name = name
         self.subset = subset
         self.strategy = strategy
         self.output_file = RESULTS_DIR / f"{name}_{subset}_results.jsonl"
         self.max_chunk_tokens = max_chunk_tokens
-    
-    def _ingest_context(self, context: str):
-        """Ingests context into a temporary DB."""
-        if os.path.exists(TEMP_DB_PATH):
-            try:
-                os.remove(TEMP_DB_PATH)
-            except PermissionError:
-                print("Warning: Could not remove DB file.")
 
-        indexer = Indexer(db_path = TEMP_DB_PATH, max_chunk_tokens=self.max_chunk_tokens)
-        
-        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt', encoding='utf-8') as tmp:
+        if db_output_dir:
+            self.db_storage_dir = Path(db_output_dir)
+        else:
+            self.db_storage_dir = BASE_DIR / "benchmark_dbs" / name / subset
+
+        self.db_storage_dir.mkdir(parents=True, exist_ok=True)
+
+    def _ingest_context(self, context: str, db_path: Path) -> None:
+        """Ingests context into a temporary DB."""
+        indexer = Indexer(db_path=str(db_path), max_chunk_tokens=self.max_chunk_tokens)
+
+        with tempfile.NamedTemporaryFile(
+            mode="w", delete=False, suffix=".txt", encoding="utf-8"
+        ) as tmp:
             tmp.write(context)
             tmp_path = tmp.name
-        
+
         try:
             indexer.ingest_file(tmp_path)
         finally:
@@ -67,21 +79,50 @@ class BenchmarkEngine:
                 os.remove(tmp_path)
 
     def _get_processed_indices(self) -> Set[int]:
-        processed = set()
+        """Returns set of already processed item indices."""
+        processed: Set[int] = set()
         if not self.output_file.exists():
             return processed
-        with open(self.output_file, 'r', encoding='utf-8') as f:
+
+        with open(self.output_file, "r", encoding="utf-8") as f:
             for line in f:
                 try:
-                    processed.add(json.loads(line)['index'])
-                except: continue
+                    record = json.loads(line)
+                    processed.add(record["index"])
+                except (json.JSONDecodeError, KeyError):
+                    continue
+
         return processed
 
-    def _save_result(self, index: int, question: str, response: str, expected: str, is_correct: bool):
-        """
-        Saves result to JSONL. 
-        CRITICAL: Does NOT save the full context text to save space.
-        """
+    def _load_existing_stats(self) -> Tuple[int, int]:
+        """Returns (correct_count, total_count) from existing results."""
+        correct_count = 0
+        total_count = 0
+
+        if not self.output_file.exists():
+            return correct_count, total_count
+
+        with open(self.output_file, "r", encoding="utf-8") as f:
+            for line in f:
+                try:
+                    record = json.loads(line)
+                    if record.get("is_correct"):
+                        correct_count += 1
+                    total_count += 1
+                except json.JSONDecodeError:
+                    continue
+
+        return correct_count, total_count
+
+    def _save_result(
+        self,
+        index: int,
+        question: str,
+        response: str,
+        expected: str,
+        is_correct: bool,
+    ) -> None:
+        """Saves result to JSONL (does NOT save full context to save space)."""
         record = {
             "index": index,
             "dataset": self.name,
@@ -89,75 +130,87 @@ class BenchmarkEngine:
             "question": question,
             "agent_response": response,
             "expected_answer": expected,
-            "is_correct": is_correct
+            "is_correct": is_correct,
         }
-        with open(self.output_file, 'a', encoding='utf-8') as f:
+        with open(self.output_file, "a", encoding="utf-8") as f:
             f.write(json.dumps(record) + "\n")
 
-    def run(self, limit: int = None):
+    def run(self, limit: int = None) -> None:
         data = self.strategy.load_data(self.subset, limit)
         processed = self._get_processed_indices()
-        print(f"Resuming {self.name}/{self.subset}. {len(processed)} items already done.")
+        correct_count, total_processed_count = self._load_existing_stats()
 
-        # Calculate initial stats
-        correct_count = 0
-        total_processed_count = 0
-        
-        # Pre-scan file for stats
-        if self.output_file.exists():
-            with open(self.output_file, 'r', encoding='utf-8') as f:
-                for line in f:
-                    if json.loads(line)['is_correct']: correct_count += 1
-                    total_processed_count += 1
+        logger.info(
+            "Resuming %s/%s. %d items already done.",
+            self.name,
+            self.subset,
+            len(processed),
+        )
 
         for i, item in enumerate(data):
             if i in processed:
                 continue
-            
-            print(f"\n--- [{self.name}] Item {i} (Total Done: {total_processed_count}) ---")
-            
-            # 1. Get Context
+
+            logger.info(
+                "[%s] Item %d (Total Done: %d)",
+                self.name,
+                i,
+                total_processed_count,
+            )
+
+            db_filename = f"q_{i}.db"
+            item_db_path = self.db_storage_dir / db_filename
+
             context = self.strategy.get_context(item)
             if not context:
-                print("Skipping empty context.")
+                logger.warning("Skipping empty context for item %d", i)
                 continue
 
-            # 2. Ingest
-            print(f"Ingesting {len(context)} chars...")
-            self._ingest_context(context)
+            # Ingest context if DB doesn't exist
+            if item_db_path.exists():
+                logger.info("Found existing DB at %s, skipping ingestion.", item_db_path)
+            else:
+                logger.info("Ingesting %d chars...", len(context))
+                self._ingest_context(context, item_db_path)
 
-            # Unique session ID avoids cache collision in `agno`
+            # Create agent with unique session ID
             session_id = f"bench_{self.name}_{self.subset}_{i}"
             agent = AgentFactory.create_agent(
                 "rlm-agent",
-                content_db_path=str(TEMP_DB_PATH),
-                session_id=session_id
+                content_db_path=str(item_db_path),
+                session_id=session_id,
             )
 
             prompt = self.strategy.create_prompt(item)
-            print("Asking Agent...")
-            
+            logger.info("Asking Agent...")
+
             response_obj = agent.run(prompt)
             response_text = str(response_obj.content)
-            print(f"Agent: {response_text}")
+            logger.info("Agent response: %s", response_text)
 
             is_correct, expected = self.strategy.evaluate(response_text, item)
-            
-            status = "CORRECT" if is_correct else f"WRONG (Exp: {expected})"
-            print(f"Result: {status}")
 
-            if is_correct: correct_count += 1
+            status = "CORRECT" if is_correct else f"WRONG (Exp: {expected})"
+            logger.info("Result: %s", status)
+
+            if is_correct:
+                correct_count += 1
             total_processed_count += 1
 
-            # 5. Persist
-            self._save_result(i, item.get('question', ''), response_text, expected, is_correct)
+            self._save_result(
+                i,
+                item.get("question", ""),
+                response_text,
+                expected,
+                is_correct,
+            )
 
-
-        print(f"\n--- Benchmarking Complete ---")
+        logger.info("Benchmarking Complete")
         if total_processed_count > 0:
             acc = (correct_count / total_processed_count) * 100
-            print(f"Final Accuracy: {correct_count}/{total_processed_count} ({acc:.2f}%)")
-        
-        # Cleanup
-        if os.path.exists(TEMP_DB_PATH):
-            os.remove(TEMP_DB_PATH)
+            logger.info(
+                "Final Accuracy: %d/%d (%.2f%%)",
+                correct_count,
+                total_processed_count,
+                acc,
+            )
