@@ -13,7 +13,7 @@ rlm-agent:
   - RLMTools
   model:
     provider: cerebras
-    model_id: zai-glm-4.6
+    model_id: zai-glm-4.7
     temperature: 0.0
   storage:
     db_path: data/rlm_agent.db
@@ -107,7 +107,6 @@ chunk-analyzer-agent:
   instructions:
   - You are a precise reading assistant.
   - Read the provided context and the user's question, and return the relevant context needed to answer the question. 
-  - Do not answer the question directly.
   tools: []
   temperature: 0.0
   calls_per_model: 3
