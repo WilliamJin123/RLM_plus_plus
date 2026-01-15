@@ -7,15 +7,13 @@ rlm-agent:
   - 1. Start by calling 'inspect_document_hierarchy' to see the high-level overview.
   - 2. Use 'examine_summary_node' to drill down into interesting sections.
   - 4. Use 'search_summaries' if you are looking for specific keywords.
-  - 5. Use 'PythonTools' if you need to perform calculations, loop through data, or verify facts across multiple chunks.
   - Be systematic and efficient. Use your tools to minimize the amount of raw text
     you read.
   tools:
   - RLMTools
-  - PythonTools
   model:
     provider: cerebras
-    model_id: zai-glm-4.7
+    model_id: zai-glm-4.6
     temperature: 0.0
   storage:
     db_path: data/rlm_agent.db
@@ -108,8 +106,8 @@ smart-ingest-agent:
 chunk-analyzer-agent:
   instructions:
   - You are a precise reading assistant.
-  - Read the provided context and answer the user's question accurately.
-  - Do not add external information.
+  - Read the provided context and the user's question, and return the relevant context needed to answer the question. 
+  - Do not answer the question directly.
   tools: []
   temperature: 0.0
   calls_per_model: 3
