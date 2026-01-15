@@ -189,22 +189,36 @@ class BenchmarkEngine:
                 logger.info("Found existing DB at %s, validating...", item_db_path)
                 validator = DatabaseValidator(str(item_db_path))
                 issues = validator.validate()
-                total_issues = sum(len(v) for v in issues.values())
+
+                # Count issues properly (incomplete_summaries is a dict, not a list)
+                missing_level_0 = len(issues["incomplete_summaries"]["missing_level_0"])
+                orphan_summaries = len(issues["incomplete_summaries"]["orphan_summary_ids"])
+                total_issues = (
+                    len(issues["provider_error"])
+                    + len(issues["think_blocks"])
+                    + len(issues["markdown_prefix"])
+                    + missing_level_0
+                    + orphan_summaries
+                )
 
                 if total_issues > 0:
                     logger.info(
-                        "Found %d issues: %d provider_error, %d think_blocks, %d markdown_prefix",
+                        "Found %d issues: %d provider_error, %d think_blocks, %d markdown_prefix, %d missing_level_0, %d orphan_summaries",
                         total_issues,
                         len(issues["provider_error"]),
                         len(issues["think_blocks"]),
                         len(issues["markdown_prefix"]),
+                        missing_level_0,
+                        orphan_summaries,
                     )
                     stats = validator.repair(dry_run=False, issues=issues)
                     logger.info(
-                        "Repair complete: cleaned=%d, regenerated=%d, failed=%d",
+                        "Repair complete: cleaned=%d, regenerated=%d, failed=%d, generated_level_0=%d, generated_hierarchy=%d",
                         stats["cleaned"],
                         stats["regenerated"],
                         stats["failed"],
+                        stats.get("generated_level_0", 0),
+                        stats.get("generated_hierarchy", 0),
                     )
                 else:
                     logger.info("Database validation passed.")

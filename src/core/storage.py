@@ -328,6 +328,67 @@ class StorageEngine:
             return cursor.fetchall()
 
     # -------------------------------------------------------------------------
+    # Completeness Checking Methods
+    # -------------------------------------------------------------------------
+
+    def get_chunks_without_summaries(self) -> List[Tuple[int, str]]:
+        """Returns (chunk_id, chunk_text) for chunks missing level-0 summaries."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT c.id, c.text FROM chunks c
+                LEFT JOIN summaries s ON s.chunk_id = c.id AND s.level = 0
+                WHERE s.id IS NULL
+                ORDER BY c.id
+            """)
+            return cursor.fetchall()
+
+    def get_orphan_summaries(self) -> List[int]:
+        """Returns summary IDs at the max level that have no parent (orphans).
+        Used to find where hierarchy building was interrupted."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            # Get max level
+            cursor.execute("SELECT MAX(level) FROM summaries")
+            res = cursor.fetchone()
+            max_level = res[0] if res and res[0] is not None else -1
+
+            if max_level < 0:
+                return []
+
+            # Get orphans at max level (no parent)
+            cursor.execute("""
+                SELECT id FROM summaries
+                WHERE level = ? AND parent_id IS NULL
+                ORDER BY sequence_index
+            """, (max_level,))
+            return [row[0] for row in cursor.fetchall()]
+
+    def get_max_summary_level(self) -> int:
+        """Returns the highest level in summaries table, or -1 if empty."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT MAX(level) FROM summaries")
+            res = cursor.fetchone()
+            return res[0] if res and res[0] is not None else -1
+
+    def get_next_sequence_index(self, level: int, parent_id: Optional[int] = None) -> int:
+        """Returns the next available sequence_index for a given level/parent."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            if parent_id is None:
+                cursor.execute("""
+                    SELECT COALESCE(MAX(sequence_index), -1) + 1
+                    FROM summaries WHERE level = ? AND parent_id IS NULL
+                """, (level,))
+            else:
+                cursor.execute("""
+                    SELECT COALESCE(MAX(sequence_index), -1) + 1
+                    FROM summaries WHERE level = ? AND parent_id = ?
+                """, (level, parent_id))
+            return cursor.fetchone()[0]
+
+    # -------------------------------------------------------------------------
     # Validation and Repair Methods
     # -------------------------------------------------------------------------
 
@@ -356,7 +417,7 @@ class StorageEngine:
                     continue
 
                 # Check for provider errors
-                if "Provider returned error" in text:
+                if "Provider returned error" in text or "No endpoints found" in text:
                     broken["provider_error"].append((summary_id, text))
                 # Check for think blocks
                 elif "<think>" in text or "</think>" in text:
