@@ -144,7 +144,7 @@ class RLMTools(Toolkit):
                 content = response.content
 
                 # Check for provider error in response
-                if "Provider returned error" in content:
+                if "Provider returned error" in content or "No endpoints found" in content:
                     if self._chunk_rotator:
                         self._chunk_rotator.force_rotate()
                     continue

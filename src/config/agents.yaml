@@ -58,8 +58,6 @@ summarization-agent:
   - provider: openrouter
     model_id: mistralai/devstral-2512:free
   - provider: openrouter
-    model_id: nousresearch/hermes-3-llama-3.1-405b:free
-  - provider: openrouter
     model_id: nvidia/nemotron-3-nano-30b-a3b:free
   - provider: openrouter
     model_id: google/gemma-3-27b-it:free
@@ -101,8 +99,6 @@ smart-ingest-agent:
   - provider: openrouter
     model_id: mistralai/devstral-2512:free
   - provider: openrouter
-    model_id: nousresearch/hermes-3-llama-3.1-405b:free
-  - provider: openrouter
     model_id: nvidia/nemotron-3-nano-30b-a3b:free
   - provider: openrouter
     model_id: google/gemma-3-27b-it:free
@@ -130,6 +126,11 @@ chunk-analyzer-agent:
     model_id: gpt-oss-120b
   - provider: cerebras
     model_id: qwen-3-235b-a22b-instruct-2507
+  # Groq Models
+  - provider: Groq
+    model_id: groq/compound-mini
+  - provider: Groq
+    model_id: groq/compound
   # OpenRouter models (>100k context, capable of reading comprehension)
   - provider: openrouter
     model_id: meta-llama/llama-3.3-70b-instruct:free
@@ -143,8 +144,6 @@ chunk-analyzer-agent:
     model_id: google/gemini-2.0-flash-exp:free
   - provider: openrouter
     model_id: mistralai/devstral-2512:free
-  - provider: openrouter
-    model_id: nousresearch/hermes-3-llama-3.1-405b:free
   - provider: openrouter
     model_id: nvidia/nemotron-3-nano-30b-a3b:free
   - provider: openrouter

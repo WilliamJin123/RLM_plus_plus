@@ -82,7 +82,7 @@ class Indexer:
                     content = response.content
 
                     # Check for provider error in response
-                    if "Provider returned error" in content:
+                    if "Provider returned error" in content or "No endpoints found" in content:
                         logger.warning(
                             "Provider error on attempt %d/%d", attempt + 1, max_retries
                         )
