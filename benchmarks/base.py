@@ -134,7 +134,7 @@ class BenchmarkEngine:
             "is_correct": is_correct,
         }
         with open(self.output_file, "a", encoding="utf-8") as f:
-            f.write(json.dumps(record) + "\n")
+            f.write("\n"+ json.dumps(record) + "\n")
 
     def run(self, limit: int = None, questions: List[int] = None) -> None:
         data = self.strategy.load_data(self.subset, limit)
