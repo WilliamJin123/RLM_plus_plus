@@ -13,7 +13,7 @@ rlm-agent:
   - RLMTools
   model:
     provider: cerebras
-    model_id: zai-glm-4.7
+    model_id: zai-glm-4.6
     temperature: 0.0
   storage:
     db_path: data/rlm_agent.db
